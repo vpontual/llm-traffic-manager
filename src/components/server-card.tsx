@@ -61,8 +61,8 @@ function UtilBar({ label, percent, temp }: { label: string; percent: number | nu
       <div className="flex justify-between text-xs mb-0.5">
         <span className="text-text-secondary">{label}</span>
         <span className="text-text-muted">
-          {hasData ? `${pct}%` : "\u2014"}
-          {temp != null && <span className={`ml-2 ${tempColor(temp)}`}>{temp}\u00b0C</span>}
+          {hasData ? `${pct}%` : "—"}
+          {temp != null && <span className={`ml-2 ${tempColor(temp)}`}>{temp}°C</span>}
         </span>
       </div>
       <div className="h-1.5 rounded-full bg-surface-base overflow-hidden">
