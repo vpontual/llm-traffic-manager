@@ -6,7 +6,7 @@ import { FleetSummary } from "@/components/fleet-summary";
 import { TimelineChart } from "@/components/timeline-chart";
 import { AvailableModels } from "@/components/available-models";
 import { UpcomingJobs } from "@/components/upcoming-jobs";
-import type { ServerState, ModelEvent, ScheduledExecution, ConflictGroup } from "@/lib/types";
+import type { ServerState, ModelEvent, ConflictGroup } from "@/lib/types";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
@@ -28,7 +28,6 @@ export default function Dashboard() {
   );
 
   const { data: scheduledTimeline } = useSWR<{
-    executions: ScheduledExecution[];
     conflicts: ConflictGroup[];
   }>("/api/scheduled-jobs/timeline?hours=24", fetcher, {
     refreshInterval: 30000,
@@ -113,13 +112,14 @@ export default function Dashboard() {
             <FleetSummary servers={servers} />
           </section>
 
-          {/* Upcoming scheduled jobs */}
-          <section className="mb-6">
-            <UpcomingJobs
-              executions={scheduledTimeline?.executions ?? []}
-              conflicts={scheduledTimeline?.conflicts ?? []}
-            />
-          </section>
+          {/* Model conflicts alert */}
+          {scheduledTimeline?.conflicts && scheduledTimeline.conflicts.length > 0 && (
+            <section className="mb-6">
+              <UpcomingJobs
+                conflicts={scheduledTimeline.conflicts}
+              />
+            </section>
+          )}
 
           {/* Available models across fleet */}
           <section className="mb-6">
