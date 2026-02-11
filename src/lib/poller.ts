@@ -87,6 +87,8 @@ async function pollAllServers() {
             uptimeSeconds: sysMetrics.uptime_seconds,
             diskTotalGb: sysMetrics.disk.total_gb,
             diskUsedGb: sysMetrics.disk.used_gb,
+            cpuPercent: sysMetrics.cpu_percent != null ? Math.round(sysMetrics.cpu_percent) : null,
+            gpuPercent: sysMetrics.gpu_percent != null ? Math.round(sysMetrics.gpu_percent) : null,
             recentBoots: sysMetrics.recent_boots,
           });
         }

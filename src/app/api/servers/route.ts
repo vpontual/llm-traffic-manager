@@ -55,6 +55,8 @@ export async function GET() {
         sysMetrics = {
           cpuTempC: latestMetrics.cpuTempC,
           gpuTempC: latestMetrics.gpuTempC,
+          cpuPercent: latestMetrics.cpuPercent ?? null,
+          gpuPercent: latestMetrics.gpuPercent ?? null,
           memTotalMb: latestMetrics.memTotalMb ?? 0,
           memUsedMb: latestMetrics.memUsedMb ?? 0,
           memAvailableMb: latestMetrics.memAvailableMb ?? 0,

@@ -51,6 +51,8 @@ export const systemMetrics = pgTable("system_metrics", {
     .notNull(),
   cpuTempC: integer("cpu_temp_c"),
   gpuTempC: integer("gpu_temp_c"),
+  cpuPercent: integer("cpu_percent"),
+  gpuPercent: integer("gpu_percent"),
   memTotalMb: integer("mem_total_mb"),
   memUsedMb: integer("mem_used_mb"),
   memAvailableMb: integer("mem_available_mb"),

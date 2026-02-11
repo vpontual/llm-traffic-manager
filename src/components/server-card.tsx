@@ -47,6 +47,34 @@ function recentRebootCount(boots: string[]): number {
   return boots.filter((b) => new Date(b).getTime() > oneDayAgo).length;
 }
 
+function utilColor(pct: number): string {
+  if (pct >= 90) return "bg-danger";
+  if (pct >= 70) return "bg-warning";
+  return "bg-accent";
+}
+
+function UtilBar({ label, percent, temp }: { label: string; percent: number | null | undefined; temp: number | null | undefined }) {
+  const pct = percent ?? 0;
+  const hasData = percent != null;
+  return (
+    <div>
+      <div className="flex justify-between text-xs mb-0.5">
+        <span className="text-text-secondary">{label}</span>
+        <span className="text-text-muted">
+          {hasData ? `${pct}%` : "\u2014"}
+          {temp != null && <span className={`ml-2 ${tempColor(temp)}`}>{temp}\u00b0C</span>}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-surface-base overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${hasData ? utilColor(pct) : "bg-surface-base"}`}
+          style={{ width: `${hasData ? pct : 0}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function ServerCard({
   server,
   latestVersion,
@@ -108,24 +136,12 @@ export function ServerCard({
           <p className="text-xs text-text-muted uppercase tracking-wide mb-2">
             System
           </p>
+          {/* CPU & GPU utilization bars */}
+          <div className="space-y-2 mb-3">
+            <UtilBar label="CPU" percent={server.systemMetrics.cpuPercent} temp={server.systemMetrics.cpuTempC} />
+            <UtilBar label="GPU" percent={server.systemMetrics.gpuPercent} temp={server.systemMetrics.gpuTempC} />
+          </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-            {/* Temps */}
-            <div className="flex justify-between">
-              <span className="text-text-secondary">CPU</span>
-              <span className={tempColor(server.systemMetrics.cpuTempC)}>
-                {server.systemMetrics.cpuTempC != null
-                  ? `${server.systemMetrics.cpuTempC}°C`
-                  : "—"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-secondary">GPU</span>
-              <span className={tempColor(server.systemMetrics.gpuTempC)}>
-                {server.systemMetrics.gpuTempC != null
-                  ? `${server.systemMetrics.gpuTempC}°C`
-                  : "—"}
-              </span>
-            </div>
             {/* Memory */}
             <div className="flex justify-between">
               <span className="text-text-secondary">RAM</span>

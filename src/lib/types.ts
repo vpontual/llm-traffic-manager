@@ -52,6 +52,8 @@ export interface ServerConfig {
 export interface SystemMetrics {
   cpuTempC: number | null;
   gpuTempC: number | null;
+  cpuPercent: number | null;
+  gpuPercent: number | null;
   memTotalMb: number;
   memUsedMb: number;
   memAvailableMb: number;

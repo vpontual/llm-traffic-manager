@@ -13,6 +13,8 @@ export interface MetricsAgentResponse {
     swap_used_mb: number;
   };
   load_avg: [number, number, number];
+  cpu_percent: number | null;
+  gpu_percent: number | null;
   recent_boots: string[];
   disk: {
     total_gb: number;
