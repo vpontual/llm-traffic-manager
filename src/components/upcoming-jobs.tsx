@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ScheduledExecution } from "@/lib/types";
+import type { ScheduledExecution, ConflictGroup } from "@/lib/types";
 
 function formatCountdown(isoDate: string): string {
   const ms = new Date(isoDate).getTime() - Date.now();
@@ -27,11 +27,17 @@ function formatTime(isoDate: string): string {
 
 export function UpcomingJobs({
   executions,
-  conflictCount = 0,
+  conflicts = [],
 }: {
   executions: ScheduledExecution[];
-  conflictCount?: number;
+  conflicts?: ConflictGroup[];
 }) {
+  // Only count same_model conflicts for the dashboard
+  const sameModelConflicts = conflicts.filter((c) => c.conflictType === "same_model");
+  const sameModelJobIds = new Set(
+    sameModelConflicts.flatMap((c) => c.jobs.map((j) => j.jobId))
+  );
+
   // Show next 5 unique jobs
   const seen = new Set<number>();
   const upcoming = executions.filter((e) => {
@@ -68,9 +74,9 @@ export function UpcomingJobs({
           <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide">
             Upcoming Scheduled
           </h3>
-          {conflictCount > 0 && (
-            <span className="px-1.5 py-0.5 text-xs bg-warning/20 text-warning rounded-full">
-              {conflictCount} conflict{conflictCount > 1 ? "s" : ""}
+          {sameModelConflicts.length > 0 && (
+            <span className="px-1.5 py-0.5 text-xs bg-danger/20 text-danger rounded-full">
+              {sameModelConflicts.length} model conflict{sameModelConflicts.length > 1 ? "s" : ""}
             </span>
           )}
         </div>
@@ -80,37 +86,40 @@ export function UpcomingJobs({
       </div>
 
       <ul className="space-y-2">
-        {upcoming.map((exec) => (
-          <li
-            key={`${exec.jobId}-${exec.startTime}`}
-            className={`flex items-center justify-between py-2 px-3 rounded-lg ${
-              exec.isConflict
-                ? "bg-warning/10 border border-warning/20"
-                : "bg-surface-overlay"
-            }`}
-          >
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-text-primary truncate font-medium">
-                {exec.jobName}
-              </p>
-              <p className="text-xs text-text-muted truncate">
-                {exec.targetModel}
-              </p>
-            </div>
-            <div className="text-right ml-3">
-              <p
-                className={`text-sm font-medium ${
-                  exec.isConflict ? "text-warning" : "text-accent"
-                }`}
-              >
-                {formatCountdown(exec.startTime)}
-              </p>
-              <p className="text-xs text-text-muted">
-                {formatTime(exec.startTime)}
-              </p>
-            </div>
-          </li>
-        ))}
+        {upcoming.map((exec) => {
+          const hasSameModelConflict = sameModelJobIds.has(exec.jobId);
+          return (
+            <li
+              key={`${exec.jobId}-${exec.startTime}`}
+              className={`flex items-center justify-between py-2 px-3 rounded-lg ${
+                hasSameModelConflict
+                  ? "bg-danger/10 border border-danger/20"
+                  : "bg-surface-overlay"
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-text-primary truncate font-medium">
+                  {exec.jobName}
+                </p>
+                <p className="text-xs text-text-muted truncate">
+                  {exec.targetModel}
+                </p>
+              </div>
+              <div className="text-right ml-3">
+                <p
+                  className={`text-sm font-medium ${
+                    hasSameModelConflict ? "text-danger" : "text-accent"
+                  }`}
+                >
+                  {formatCountdown(exec.startTime)}
+                </p>
+                <p className="text-xs text-text-muted">
+                  {formatTime(exec.startTime)}
+                </p>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

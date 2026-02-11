@@ -117,7 +117,7 @@ export default function Dashboard() {
           <section className="mb-6">
             <UpcomingJobs
               executions={scheduledTimeline?.executions ?? []}
-              conflictCount={scheduledTimeline?.conflicts?.length ?? 0}
+              conflicts={scheduledTimeline?.conflicts ?? []}
             />
           </section>
 
