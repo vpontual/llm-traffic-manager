@@ -31,6 +31,13 @@ export default function SchedulePage() {
   const [hours, setHours] = useState(24);
   const [showForm, setShowForm] = useState(false);
   const [editingJob, setEditingJob] = useState<ScheduledJob | null>(null);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverResult, setDiscoverResult] = useState<{
+    added: number;
+    skipped: number;
+    addedJobs: string[];
+    skippedJobs: string[];
+  } | null>(null);
 
   const { data: jobs, isLoading: jobsLoading } = useSWR<ScheduledJob[]>(
     "/api/scheduled-jobs",
@@ -122,6 +129,28 @@ export default function SchedulePage() {
     }
   };
 
+  const handleDiscover = async () => {
+    setDiscovering(true);
+    setDiscoverResult(null);
+    try {
+      const res = await fetch("/api/scheduled-jobs/discover", {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setDiscoverResult(data);
+        mutate("/api/scheduled-jobs");
+        mutate(`/api/scheduled-jobs/timeline?hours=${hours}`);
+      } else {
+        alert(data.error || "Discovery failed");
+      }
+    } catch (err) {
+      alert("Discovery failed - is Docker socket mounted?");
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       {/* Header */}
@@ -154,6 +183,13 @@ export default function SchedulePage() {
             ))}
           </div>
           <button
+            onClick={handleDiscover}
+            disabled={discovering}
+            className="px-4 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors disabled:opacity-50"
+          >
+            {discovering ? "Discovering..." : "Discover Jobs"}
+          </button>
+          <button
             onClick={() => setShowForm(true)}
             className="px-4 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors"
           >
@@ -161,6 +197,50 @@ export default function SchedulePage() {
           </button>
         </div>
       </div>
+
+      {/* Discovery Result */}
+      {discoverResult && (
+        <div className="mb-6 bg-surface-raised border border-border rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-text-primary">
+              Discovery Results
+            </h3>
+            <button
+              onClick={() => setDiscoverResult(null)}
+              className="text-text-muted hover:text-text-secondary"
+            >
+              &times;
+            </button>
+          </div>
+          <p className="text-sm text-text-secondary mb-2">
+            Added {discoverResult.added} job{discoverResult.added !== 1 ? "s" : ""},
+            skipped {discoverResult.skipped}
+          </p>
+          {discoverResult.addedJobs.length > 0 && (
+            <div className="mb-2">
+              <p className="text-xs text-success mb-1">Added:</p>
+              <ul className="text-xs text-text-muted">
+                {discoverResult.addedJobs.map((name) => (
+                  <li key={name}>+ {name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {discoverResult.skippedJobs.length > 0 && (
+            <div>
+              <p className="text-xs text-text-muted mb-1">Skipped:</p>
+              <ul className="text-xs text-text-muted">
+                {discoverResult.skippedJobs.slice(0, 5).map((name) => (
+                  <li key={name}>- {name}</li>
+                ))}
+                {discoverResult.skippedJobs.length > 5 && (
+                  <li>...and {discoverResult.skippedJobs.length - 5} more</li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Form Modal */}
       {(showForm || editingJob) && (
