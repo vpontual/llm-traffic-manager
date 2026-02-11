@@ -4,6 +4,7 @@ import { pollServer } from "./ollama";
 import { fetchSystemMetrics } from "./metrics";
 import { eq } from "drizzle-orm";
 import type { ServerConfig, OllamaRunningModel } from "./types";
+import { checkServerAlerts } from "./alerts";
 
 // In-memory state for diffing loaded models between polls
 const previousModels = new Map<number, Set<string>>();
@@ -89,6 +90,9 @@ async function pollAllServers() {
             recentBoots: sysMetrics.recent_boots,
           });
         }
+
+        // Check for alert conditions
+        await checkServerAlerts(server.name, result.isOnline, sysMetrics);
 
         // Detect model changes
         const currentModelNames = new Set(
