@@ -111,7 +111,7 @@ export function ScheduleTimeline({
           {/* Timeline view - single row with all jobs */}
           <div className="mb-3">
             <div className="flex items-center gap-3">
-              <span className="text-xs text-text-secondary w-20 shrink-0">
+              <span className="text-xs text-text-secondary w-48 shrink-0">
                 All Jobs
               </span>
               <div className="flex-1 h-10 bg-surface-overlay rounded relative overflow-hidden">
@@ -151,7 +151,7 @@ export function ScheduleTimeline({
               const jobSegments = segments.filter((s) => s.jobName === jobName);
               return (
                 <div key={jobName} className="flex items-center gap-3">
-                  <span className="text-xs text-text-secondary w-20 shrink-0 truncate">
+                  <span className="text-xs text-text-secondary w-48 shrink-0 truncate" title={jobName}>
                     {jobName}
                   </span>
                   <div className="flex-1 h-6 bg-surface-overlay rounded relative overflow-hidden">
@@ -180,14 +180,14 @@ export function ScheduleTimeline({
           </div>
 
           {/* Time axis */}
-          <div className="flex justify-between ml-[5.75rem] text-xs text-text-muted">
+          <div className="flex justify-between ml-[12.75rem] text-xs text-text-muted">
             {ticks.map((t, i) => (
               <span key={i}>{t}</span>
             ))}
           </div>
 
           {/* Legend */}
-          <div className="flex flex-wrap gap-3 mt-4 ml-[5.75rem]">
+          <div className="flex flex-wrap gap-3 mt-4 ml-[12.75rem]">
             {jobNames.map((name) => (
               <div key={name} className="flex items-center gap-1.5">
                 <span
