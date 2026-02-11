@@ -92,3 +92,49 @@ export interface ModelEvent {
   quantization: string | null;
   occurredAt: string;
 }
+
+// Scheduled Jobs types
+
+export interface ScheduledJob {
+  id: number;
+  name: string;
+  description: string | null;
+  sourceIdentifier: string;
+  cronExpression: string;
+  timezone: string;
+  targetModel: string;
+  preferredServerId: number | null;
+  preferredServerName: string | null;
+  expectedDurationMs: number;
+  isEnabled: boolean;
+  nextExecutions: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduledExecution {
+  jobId: number;
+  jobName: string;
+  sourceIdentifier: string;
+  targetModel: string;
+  startTime: string;
+  endTime: string;
+  isConflict: boolean;
+}
+
+export interface ConflictGroup {
+  startTime: string;
+  endTime: string;
+  jobs: Array<{
+    jobId: number;
+    jobName: string;
+    targetModel: string;
+  }>;
+  conflictType: "same_model" | "time_overlap";
+}
+
+export interface TimeSlot {
+  startTime: string;
+  endTime: string;
+  durationMs: number;
+}

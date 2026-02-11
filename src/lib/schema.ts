@@ -78,3 +78,18 @@ export const requestLogs = pgTable("request_logs", {
   durationMs: integer("duration_ms"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const scheduledJobs = pgTable("scheduled_jobs", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  sourceIdentifier: text("source_identifier").notNull(),
+  cronExpression: text("cron_expression").notNull(),
+  timezone: text("timezone").default("UTC").notNull(),
+  targetModel: text("target_model").notNull(),
+  preferredServerId: integer("preferred_server_id").references(() => servers.id),
+  expectedDurationMs: integer("expected_duration_ms").default(60000).notNull(),
+  isEnabled: boolean("is_enabled").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

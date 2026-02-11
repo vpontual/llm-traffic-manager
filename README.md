@@ -14,6 +14,7 @@ A dashboard and proxy server for monitoring and managing a fleet of Ollama GPU s
 - **Event Timeline** - Visual timeline of model load/unload events
 - **System Metrics** - CPU/GPU temperature, memory, disk, and uptime via Prometheus node exporter
 - **Request Audit Log** - Logs all proxy requests with latency metrics
+- **Scheduled Jobs** - Register cron schedules, visualize upcoming executions, detect conflicts
 - **OpenAI API Compatible** - Supports `/v1/*` endpoints
 
 ## Architecture
@@ -100,6 +101,15 @@ To display CPU/GPU temperature, memory, and disk metrics, install [Prometheus No
 - `GET /api/requests?hours=24` - Proxy request logs
 - `GET /api/usage?hours=168` - Model usage statistics
 - `POST /api/poll` - Trigger manual polling
+
+### Scheduled Jobs API
+
+- `GET /api/scheduled-jobs` - List all scheduled jobs
+- `POST /api/scheduled-jobs` - Create a new job
+- `PUT /api/scheduled-jobs/:id` - Update a job
+- `DELETE /api/scheduled-jobs/:id` - Delete a job
+- `GET /api/scheduled-jobs/timeline?hours=24` - Get timeline with conflicts
+- `GET /api/scheduled-jobs/suggestions?model=X&durationMs=Y` - Find open time slots
 
 ### Proxy (Port 11434)
 

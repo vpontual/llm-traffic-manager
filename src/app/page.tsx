@@ -5,7 +5,8 @@ import { ServerGrid } from "@/components/server-grid";
 import { FleetSummary } from "@/components/fleet-summary";
 import { TimelineChart } from "@/components/timeline-chart";
 import { AvailableModels } from "@/components/available-models";
-import type { ServerState, ModelEvent } from "@/lib/types";
+import { UpcomingJobs } from "@/components/upcoming-jobs";
+import type { ServerState, ModelEvent, ScheduledExecution, ConflictGroup } from "@/lib/types";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
@@ -25,6 +26,13 @@ export default function Dashboard() {
     fetcher,
     { refreshInterval: 10000 }
   );
+
+  const { data: scheduledTimeline } = useSWR<{
+    executions: ScheduledExecution[];
+    conflicts: ConflictGroup[];
+  }>("/api/scheduled-jobs/timeline?hours=24", fetcher, {
+    refreshInterval: 30000,
+  });
 
   // Track time since last data update
   const lastUpdated = useRef<number>(Date.now());
@@ -66,6 +74,12 @@ export default function Dashboard() {
             </span>
           )}
           <Link
+            href="/schedule"
+            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
+          >
+            Schedule
+          </Link>
+          <Link
             href="/history"
             className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
           >
@@ -97,6 +111,14 @@ export default function Dashboard() {
           {/* Fleet summary */}
           <section className="mb-6">
             <FleetSummary servers={servers} />
+          </section>
+
+          {/* Upcoming scheduled jobs */}
+          <section className="mb-6">
+            <UpcomingJobs
+              executions={scheduledTimeline?.executions ?? []}
+              conflictCount={scheduledTimeline?.conflicts?.length ?? 0}
+            />
           </section>
 
           {/* Available models across fleet */}
