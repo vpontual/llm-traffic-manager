@@ -1,5 +1,5 @@
 import { db } from "../lib/db";
-import { servers, serverSnapshots, modelPins } from "../lib/schema";
+import { servers, serverSnapshots } from "../lib/schema";
 import { eq, desc } from "drizzle-orm";
 import type { OllamaRunningModel, OllamaAvailableModel } from "../lib/types";
 
@@ -29,41 +29,6 @@ const lastRoutedServer = new Map<string, number>();
 // on back-to-back requests for the same model.
 const optimisticLoads = new Map<string, { serverId: number; timestamp: number }>();
 const OPTIMISTIC_TTL_MS = 30000; // 30s — enough for load + poller to catch up
-
-// Model pinning cache — pins change rarely, 10s TTL is fine
-let cachedPins: { modelPattern: string; serverId: number }[] = [];
-let lastPinRefresh = 0;
-const PIN_CACHE_TTL_MS = 10000;
-
-async function getModelPins(): Promise<typeof cachedPins> {
-  const now = Date.now();
-  if (now - lastPinRefresh < PIN_CACHE_TTL_MS) {
-    return cachedPins;
-  }
-  try {
-    cachedPins = await db
-      .select({
-        modelPattern: modelPins.modelPattern,
-        serverId: modelPins.serverId,
-      })
-      .from(modelPins)
-      .where(eq(modelPins.isEnabled, true))
-      .orderBy(desc(modelPins.priority));
-  } catch {
-    // Table may not exist yet during first migration — use empty cache
-  }
-  lastPinRefresh = now;
-  return cachedPins;
-}
-
-function matchesPin(pattern: string, modelName: string): boolean {
-  if (pattern === modelName) return true;
-  // Wildcard: "gemma3:*" matches "gemma3:4b", "gemma3:12b", etc.
-  if (pattern.endsWith(":*")) {
-    return modelName.startsWith(pattern.slice(0, -1));
-  }
-  return false;
-}
 
 export async function refreshServerStates(): Promise<ServerSnapshot[]> {
   const now = Date.now();
@@ -133,7 +98,6 @@ export interface RouteDecision {
  * Pick the best server for a model request.
  *
  * Priority:
- * 0. Model pinning — if a pin exists and the target server is online, use it
  * 1. Server that has the model loaded in memory (from poller data or optimistic
  *    tracking after a recent routing decision)
  * 2. Server that has the model downloaded (available):
@@ -147,27 +111,6 @@ export async function routeModel(modelName: string): Promise<RouteDecision | nul
   const onlineServers = states.filter((s) => s.isOnline);
 
   if (onlineServers.length === 0) return null;
-
-  // 0. Model pinning — override all other routing if a pin matches
-  const pins = await getModelPins();
-  const matchedPin = pins.find((p) => matchesPin(p.modelPattern, modelName));
-  if (matchedPin) {
-    const pinnedServer = onlineServers.find((s) => s.id === matchedPin.serverId);
-    if (pinnedServer) {
-      lastRoutedServer.set(modelName, pinnedServer.id);
-      optimisticLoads.set(modelName, {
-        serverId: pinnedServer.id,
-        timestamp: Date.now(),
-      });
-      return {
-        host: pinnedServer.host,
-        serverId: pinnedServer.id,
-        serverName: pinnedServer.name,
-        reason: "model_pinned",
-      };
-    }
-    // Pinned server is offline — fall through to normal routing
-  }
 
   // Check optimistic loads for this model
   const optimistic = optimisticLoads.get(modelName);
@@ -262,4 +205,26 @@ export async function pickAnyServer(): Promise<RouteDecision | null> {
 export async function getAllOnlineServers(): Promise<ServerSnapshot[]> {
   const states = await refreshServerStates();
   return states.filter((s) => s.isOnline);
+}
+
+/**
+ * Resolve a server by name (case-insensitive). Returns a RouteDecision if the
+ * server is online, null otherwise. Used by the proxy to honor
+ * X-Ollama-Pin-Server headers from services that know which server they want.
+ */
+export async function resolveServerByName(
+  serverName: string
+): Promise<RouteDecision | null> {
+  const states = await refreshServerStates();
+  const lower = serverName.toLowerCase();
+  const server = states.find(
+    (s) => s.isOnline && s.name.toLowerCase() === lower
+  );
+  if (!server) return null;
+  return {
+    host: server.host,
+    serverId: server.id,
+    serverName: server.name,
+    reason: "pinned_by_header",
+  };
 }

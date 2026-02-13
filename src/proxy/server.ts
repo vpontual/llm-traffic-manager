@@ -1,5 +1,10 @@
 import http from "node:http";
-import { routeModel, pickAnyServer, getAllOnlineServers } from "./router";
+import {
+  routeModel,
+  pickAnyServer,
+  getAllOnlineServers,
+  resolveServerByName,
+} from "./router";
 import { db } from "../lib/db";
 import { requestLogs } from "../lib/schema";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -328,11 +333,19 @@ async function handleRequest(
   // Extract model from request body
   const model = MODEL_ENDPOINTS.has(path) ? extractModel(body, path) : null;
 
-  // Route the request
+  // Route the request — honor X-Ollama-Pin-Server header if present
+  const pinHeader = req.headers["x-ollama-pin-server"];
+  const pinServerName = typeof pinHeader === "string" ? pinHeader.trim() : null;
+
   let route;
-  if (model) {
+  if (pinServerName) {
+    route = await resolveServerByName(pinServerName);
+    // Fall through to normal routing if pinned server is offline
+  }
+  if (!route && model) {
     route = await routeModel(model);
-  } else {
+  }
+  if (!route) {
     route = await pickAnyServer();
   }
 

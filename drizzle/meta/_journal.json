@@ -36,6 +36,13 @@
       "when": 1771000000000,
       "tag": "0004_model_pins",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1771000100000,
+      "tag": "0005_drop_model_pins",
+      "breakpoints": true
     }
   ]
 }
