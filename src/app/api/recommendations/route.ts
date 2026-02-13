@@ -115,6 +115,9 @@ export async function GET(request: NextRequest) {
   considerRemoving.sort((a, b) => b.churnScore - a.churnScore);
 
   // 5. Build "consider adding" list
+  // Only recommend models that are on exactly 1 server (true SPOF with no
+  // load distribution). Models on 2+ servers don't need to be everywhere —
+  // e.g. small models on both Nanos don't belong on the AGX.
   const modelRequests = await db
     .select({
       model: requestLogs.model,
@@ -131,7 +134,8 @@ export async function GET(request: NextRequest) {
     if (!mr.model) continue;
     const total = Number(mr.totalRequests);
     const availableOn = availabilityMap.get(mr.model) ?? [];
-    if (total >= 5 && availableOn.length < totalServers) {
+    // Only flag models on exactly 1 server with meaningful demand
+    if (total >= 10 && availableOn.length === 1) {
       considerAdding.push({
         modelName: mr.model,
         serverName: "",
