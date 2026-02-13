@@ -10,6 +10,7 @@ interface ModelRecommendation {
   churnScore: number;
   availableOn: string[];
   totalServers: number;
+  totalRequestCount: number;
 }
 
 export interface RecommendationsResponse {
@@ -36,7 +37,7 @@ export function ModelRecommendations({
             </h3>
           </div>
           <p className="text-xs text-text-muted mt-1">
-            High load/unload churn with few proxy requests
+            Models with low utilization on this server (available elsewhere)
           </p>
         </div>
         {data.considerRemoving.length === 0 ? (
@@ -52,7 +53,8 @@ export function ModelRecommendations({
                   <th className="text-left p-3 pl-4">Model</th>
                   <th className="text-left p-3">Server</th>
                   <th className="text-right p-3">Loads</th>
-                  <th className="text-right p-3">Reqs</th>
+                  <th className="text-right p-3">Here</th>
+                  <th className="text-right p-3">Fleet</th>
                   <th className="text-right p-3 pr-4">Also On</th>
                 </tr>
               </thead>
@@ -61,6 +63,10 @@ export function ModelRecommendations({
                   const otherServers = rec.availableOn.filter(
                     (s) => s !== rec.serverName
                   );
+                  const utilPct =
+                    rec.loadCount > 0
+                      ? Math.round((rec.requestCount / rec.loadCount) * 100)
+                      : 0;
                   return (
                     <tr
                       key={i}
@@ -77,15 +83,17 @@ export function ModelRecommendations({
                       </td>
                       <td className="p-3 text-right text-text-muted">
                         {rec.requestCount}
+                        <span className="text-xs ml-0.5 opacity-60">
+                          ({utilPct}%)
+                        </span>
+                      </td>
+                      <td className="p-3 text-right text-text-secondary">
+                        {rec.totalRequestCount}
                       </td>
                       <td className="p-3 pr-4 text-right">
-                        {otherServers.length > 0 ? (
-                          <span className="text-xs text-success">
-                            {otherServers.join(", ")}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-danger">Only here</span>
-                        )}
+                        <span className="text-xs text-success">
+                          {otherServers.join(", ")}
+                        </span>
                       </td>
                     </tr>
                   );
@@ -102,11 +110,11 @@ export function ModelRecommendations({
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-accent" />
             <h3 className="font-semibold text-text-primary">
-              Consider Adding to All Servers
+              Consider Replicating
             </h3>
           </div>
           <p className="text-xs text-text-muted mt-1">
-            Popular models only available on some servers
+            Models where demand exceeds available server capacity
           </p>
         </div>
         {data.considerAdding.length === 0 ? (

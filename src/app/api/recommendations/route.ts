@@ -15,6 +15,7 @@ interface ModelRecommendation {
   churnScore: number;
   availableOn: string[];
   totalServers: number;
+  totalRequestCount: number;
 }
 
 interface RecommendationsResponse {
@@ -86,31 +87,56 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Build total request count per model (across all servers) for context
+  const totalReqByModel = new Map<string, number>();
+  for (const r of reqCounts) {
+    if (r.model) {
+      totalReqByModel.set(r.model, (totalReqByModel.get(r.model) ?? 0) + r.count);
+    }
+  }
+
   // 4. Build "consider removing" list
+  // A model is a removal candidate on a server when:
+  // - It's available on at least 1 other server (removing won't lose access)
+  // - It has meaningful churn (>= 5 loads in the period)
+  // - Low utilization ratio on THIS server (proxy requests / loads < 15%)
+  //   This catches both "0 requests" and "3 requests out of 200 loads"
   const considerRemoving: ModelRecommendation[] = [];
   for (const ec of eventCounts) {
     const loadCount = Number(ec.loadCount);
     const unloadCount = Number(ec.unloadCount);
     const requestCount = reqMap.get(`${ec.serverId}:${ec.modelName}`) ?? 0;
-    const churnScore = loadCount - requestCount;
     const availableOn = availabilityMap.get(ec.modelName) ?? [];
+    const totalRequestCount = totalReqByModel.get(ec.modelName) ?? 0;
 
-    // Skip models no longer installed on this server (already removed)
+    // Skip models no longer installed on this server
     if (!availableOn.includes(ec.serverName)) continue;
 
-    if (loadCount >= 10 && requestCount <= 2 && churnScore >= 10) {
-      considerRemoving.push({
-        modelName: ec.modelName,
-        serverName: ec.serverName,
-        serverId: ec.serverId,
-        loadCount,
-        unloadCount,
-        requestCount,
-        churnScore,
-        availableOn,
-        totalServers,
-      });
-    }
+    // Must be available on at least 1 other server (safe to remove)
+    if (availableOn.length < 2) continue;
+
+    // Meaningful churn threshold
+    if (loadCount < 5) continue;
+
+    // Utilization ratio: what % of loads are from actual proxy requests?
+    const utilization = loadCount > 0 ? requestCount / loadCount : 0;
+    if (utilization >= 0.15) continue;
+
+    // Churn score: loads that didn't serve a proxy request
+    const churnScore = loadCount - requestCount;
+
+    considerRemoving.push({
+      modelName: ec.modelName,
+      serverName: ec.serverName,
+      serverId: ec.serverId,
+      loadCount,
+      unloadCount,
+      requestCount,
+      churnScore,
+      availableOn,
+      totalServers,
+      totalRequestCount,
+    });
   }
   considerRemoving.sort((a, b) => b.churnScore - a.churnScore);
 
@@ -175,6 +201,7 @@ export async function GET(request: NextRequest) {
         churnScore: Math.round(estimatedPeakConcurrency * 10) / 10,
         availableOn,
         totalServers,
+        totalRequestCount: totalRequests,
       });
     }
   }
