@@ -112,7 +112,7 @@ export function ModelRecommendations({
         {data.considerAdding.length === 0 ? (
           <div className="p-4 text-sm text-text-muted flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-success" />
-            All popular models are on every server
+            No models are bottlenecked by server capacity
           </div>
         ) : (
           <div className="max-h-[300px] overflow-y-auto">

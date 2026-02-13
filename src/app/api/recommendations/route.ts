@@ -115,41 +115,70 @@ export async function GET(request: NextRequest) {
   considerRemoving.sort((a, b) => b.churnScore - a.churnScore);
 
   // 5. Build "consider adding" list
-  // Only recommend models that are on exactly 1 server (true SPOF with no
-  // load distribution). Models on 2+ servers don't need to be everywhere —
-  // e.g. small models on both Nanos don't belong on the AGX.
-  const modelRequests = await db
-    .select({
-      model: requestLogs.model,
-      totalRequests: sql<number>`count(*)::int`,
-    })
-    .from(requestLogs)
-    .where(
-      and(gte(requestLogs.createdAt, since), sql`${requestLogs.model} is not null`)
-    )
-    .groupBy(requestLogs.model);
+  // Only recommend when concurrent request demand exceeds server capacity.
+  // We estimate peak concurrency per model by bucketing requests into 1-minute
+  // windows and using: peak_requests_per_minute * (avg_duration / 60s).
+  // If estimated peak concurrency > number of servers hosting the model,
+  // the existing servers can't keep up and the model needs more replicas.
+  const concurrencyStats = await db.execute(sql`
+    SELECT
+      model,
+      MAX(bucket_count) AS peak_per_minute,
+      AVG(avg_dur_ms)::int AS avg_duration_ms,
+      SUM(bucket_count)::int AS total_requests
+    FROM (
+      SELECT
+        model,
+        date_trunc('minute', created_at) AS bucket,
+        COUNT(*) AS bucket_count,
+        AVG(duration_ms) AS avg_dur_ms
+      FROM request_logs
+      WHERE created_at >= ${since.toISOString()}
+        AND model IS NOT NULL
+        AND duration_ms IS NOT NULL
+      GROUP BY model, date_trunc('minute', created_at)
+    ) sub
+    GROUP BY model
+  `);
 
   const considerAdding: ModelRecommendation[] = [];
-  for (const mr of modelRequests) {
-    if (!mr.model) continue;
-    const total = Number(mr.totalRequests);
-    const availableOn = availabilityMap.get(mr.model) ?? [];
-    // Only flag models on exactly 1 server with meaningful demand
-    if (total >= 10 && availableOn.length === 1) {
+  for (const row of concurrencyStats as unknown as Array<{
+    model: string;
+    peak_per_minute: string;
+    avg_duration_ms: string;
+    total_requests: string;
+  }>) {
+    const modelName = row.model;
+    const peakPerMinute = Number(row.peak_per_minute);
+    const avgDurationMs = Number(row.avg_duration_ms);
+    const totalRequests = Number(row.total_requests);
+    const availableOn = availabilityMap.get(modelName) ?? [];
+    const numServers = availableOn.length;
+
+    if (numServers === 0 || numServers >= totalServers) continue;
+
+    // Estimate peak concurrency: during the busiest minute, how many requests
+    // were likely running simultaneously?
+    const avgDurationSec = avgDurationMs / 1000;
+    const estimatedPeakConcurrency = peakPerMinute * (avgDurationSec / 60);
+
+    // Only recommend if peak concurrency exceeds available server count
+    // (the existing servers were saturated and requests were likely queuing)
+    if (estimatedPeakConcurrency > numServers && totalRequests >= 10) {
       considerAdding.push({
-        modelName: mr.model,
+        modelName,
         serverName: "",
         serverId: 0,
         loadCount: 0,
         unloadCount: 0,
-        requestCount: total,
-        churnScore: 0,
+        requestCount: totalRequests,
+        churnScore: Math.round(estimatedPeakConcurrency * 10) / 10,
         availableOn,
         totalServers,
       });
     }
   }
-  considerAdding.sort((a, b) => b.requestCount - a.requestCount);
+  considerAdding.sort((a, b) => b.churnScore - a.churnScore);
 
   return NextResponse.json({
     considerRemoving,
