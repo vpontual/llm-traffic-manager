@@ -81,6 +81,17 @@ export const requestLogs = pgTable("request_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const modelPins = pgTable("model_pins", {
+  id: serial("id").primaryKey(),
+  modelPattern: text("model_pattern").notNull().unique(),
+  serverId: integer("server_id")
+    .references(() => servers.id)
+    .notNull(),
+  priority: integer("priority").default(0).notNull(),
+  isEnabled: boolean("is_enabled").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const scheduledJobs = pgTable("scheduled_jobs", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
