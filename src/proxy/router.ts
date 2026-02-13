@@ -14,13 +14,21 @@ interface ServerSnapshot {
   totalVramUsed: number;
 }
 
-// In-memory cache of server states, refreshed periodically
+// In-memory cache of server states, refreshed periodically from poller DB data
 let cachedStates: ServerSnapshot[] = [];
 let lastRefresh = 0;
 const CACHE_TTL_MS = 3000; // 3 seconds
 
 // Track which server last handled each model (for anti-churn routing)
 const lastRoutedServer = new Map<string, number>();
+
+// Optimistic load tracking: after routing a model to a server, treat it as
+// "loaded" there until the poller confirms otherwise. This bridges the gap
+// between routing a request and the poller detecting the model is loaded
+// (~10s polling interval), preventing anti-churn from incorrectly kicking in
+// on back-to-back requests for the same model.
+const optimisticLoads = new Map<string, { serverId: number; timestamp: number }>();
+const OPTIMISTIC_TTL_MS = 30000; // 30s — enough for load + poller to catch up
 
 export async function refreshServerStates(): Promise<ServerSnapshot[]> {
   const now = Date.now();
@@ -51,6 +59,19 @@ export async function refreshServerStates(): Promise<ServerSnapshot[]> {
     });
   }
 
+  // Clear optimistic entries for models that the poller now confirms are loaded.
+  // This keeps the optimistic map small and lets poller data take over.
+  for (const [modelName, entry] of optimisticLoads) {
+    const server = states.find((s) => s.id === entry.serverId);
+    if (server && server.loadedModels.some((m) => m.name === modelName)) {
+      optimisticLoads.delete(modelName);
+    }
+    // Also expire stale entries
+    if (now - entry.timestamp > OPTIMISTIC_TTL_MS) {
+      optimisticLoads.delete(modelName);
+    }
+  }
+
   cachedStates = states;
   lastRefresh = now;
   return states;
@@ -77,7 +98,8 @@ export interface RouteDecision {
  * Pick the best server for a model request.
  *
  * Priority:
- * 1. Server that already has the model loaded in memory → pick by most free VRAM
+ * 1. Server that has the model loaded in memory (from poller data or optimistic
+ *    tracking after a recent routing decision)
  * 2. Server that has the model downloaded (available):
  *    - If multiple servers have it, avoid the one that last ran it (it unloaded,
  *      so it has VRAM pressure — try a different server to reduce churn)
@@ -90,14 +112,25 @@ export async function routeModel(modelName: string): Promise<RouteDecision | nul
 
   if (onlineServers.length === 0) return null;
 
-  // 1. Server with model already loaded in memory
-  const withModelLoaded = onlineServers.filter((s) =>
-    s.loadedModels.some((m) => m.name === modelName)
+  // Check optimistic loads for this model
+  const optimistic = optimisticLoads.get(modelName);
+  const optimisticServerId =
+    optimistic && Date.now() - optimistic.timestamp <= OPTIMISTIC_TTL_MS
+      ? optimistic.serverId
+      : null;
+
+  // 1. Server with model loaded in memory (poller data OR optimistic)
+  const withModelLoaded = onlineServers.filter(
+    (s) =>
+      s.loadedModels.some((m) => m.name === modelName) ||
+      s.id === optimisticServerId
   );
 
   if (withModelLoaded.length > 0) {
     const best = pickByVram(withModelLoaded);
     lastRoutedServer.set(modelName, best.id);
+    // Refresh optimistic timestamp — stays valid while model is actively used
+    optimisticLoads.set(modelName, { serverId: best.id, timestamp: Date.now() });
     return {
       host: best.host,
       serverId: best.id,
@@ -127,6 +160,8 @@ export async function routeModel(modelName: string): Promise<RouteDecision | nul
 
     const best = pickByVram(candidates);
     lastRoutedServer.set(modelName, best.id);
+    // Mark as optimistically loaded so the next request routes here too
+    optimisticLoads.set(modelName, { serverId: best.id, timestamp: Date.now() });
     return {
       host: best.host,
       serverId: best.id,
@@ -140,6 +175,7 @@ export async function routeModel(modelName: string): Promise<RouteDecision | nul
   // 3. Fall back to server with most free VRAM
   const best = pickByVram(onlineServers);
   lastRoutedServer.set(modelName, best.id);
+  optimisticLoads.set(modelName, { serverId: best.id, timestamp: Date.now() });
   return {
     host: best.host,
     serverId: best.id,
