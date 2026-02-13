@@ -19,8 +19,8 @@ let cachedStates: ServerSnapshot[] = [];
 let lastRefresh = 0;
 const CACHE_TTL_MS = 3000; // 3 seconds
 
-// Round-robin counter for tiebreaking when multiple servers have equal free VRAM
-let roundRobinCounter = 0;
+// Track which server last handled each model (for anti-churn routing)
+const lastRoutedServer = new Map<string, number>();
 
 export async function refreshServerStates(): Promise<ServerSnapshot[]> {
   const now = Date.now();
@@ -60,15 +60,10 @@ function freeVram(s: ServerSnapshot): number {
   return s.totalRamGb * 1024 * 1024 * 1024 - s.totalVramUsed;
 }
 
-/** Sort by most free VRAM, then round-robin among ties */
-function pickBest(candidates: ServerSnapshot[]): ServerSnapshot {
+/** Pick server with most free VRAM */
+function pickByVram(candidates: ServerSnapshot[]): ServerSnapshot {
   candidates.sort((a, b) => freeVram(b) - freeVram(a));
-  // Find all candidates tied with the top free VRAM
-  const topFree = freeVram(candidates[0]);
-  const tied = candidates.filter((s) => freeVram(s) === topFree);
-  const pick = tied[roundRobinCounter % tied.length];
-  roundRobinCounter++;
-  return pick;
+  return candidates[0];
 }
 
 export interface RouteDecision {
@@ -82,9 +77,12 @@ export interface RouteDecision {
  * Pick the best server for a model request.
  *
  * Priority:
- * 1. Server that already has the model loaded in memory
- * 2. Server that has the model downloaded + most free VRAM
- * 3. Server with the most free VRAM (will need to pull)
+ * 1. Server that already has the model loaded in memory → pick by most free VRAM
+ * 2. Server that has the model downloaded (available):
+ *    - If multiple servers have it, avoid the one that last ran it (it unloaded,
+ *      so it has VRAM pressure — try a different server to reduce churn)
+ *    - If only one server has it, route there regardless
+ * 3. Fallback: server with the most free VRAM (will need to pull the model)
  */
 export async function routeModel(modelName: string): Promise<RouteDecision | null> {
   const states = await refreshServerStates();
@@ -98,7 +96,8 @@ export async function routeModel(modelName: string): Promise<RouteDecision | nul
   );
 
   if (withModelLoaded.length > 0) {
-    const best = pickBest(withModelLoaded);
+    const best = pickByVram(withModelLoaded);
+    lastRoutedServer.set(modelName, best.id);
     return {
       host: best.host,
       serverId: best.id,
@@ -107,23 +106,40 @@ export async function routeModel(modelName: string): Promise<RouteDecision | nul
     };
   }
 
-  // 2. Server with model downloaded (available) + most free VRAM
+  // 2. Server with model downloaded (available)
   const withModelAvailable = onlineServers.filter((s) =>
     s.availableModels.some((m) => m.name === modelName)
   );
 
   if (withModelAvailable.length > 0) {
-    const best = pickBest(withModelAvailable);
+    let candidates = withModelAvailable;
+
+    // If multiple servers have the model, avoid the one that last handled it.
+    // That server unloaded the model (VRAM pressure), so try a different one
+    // to spread the load and reduce churn.
+    const lastServerId = lastRoutedServer.get(modelName);
+    if (lastServerId != null && candidates.length > 1) {
+      const others = candidates.filter((s) => s.id !== lastServerId);
+      if (others.length > 0) {
+        candidates = others;
+      }
+    }
+
+    const best = pickByVram(candidates);
+    lastRoutedServer.set(modelName, best.id);
     return {
       host: best.host,
       serverId: best.id,
       serverName: best.name,
-      reason: "model_available",
+      reason: candidates.length < withModelAvailable.length
+        ? "model_available_anti_churn"
+        : "model_available",
     };
   }
 
   // 3. Fall back to server with most free VRAM
-  const best = pickBest(onlineServers);
+  const best = pickByVram(onlineServers);
+  lastRoutedServer.set(modelName, best.id);
   return {
     host: best.host,
     serverId: best.id,
