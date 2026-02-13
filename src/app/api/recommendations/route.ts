@@ -95,6 +95,9 @@ export async function GET(request: NextRequest) {
     const churnScore = loadCount - requestCount;
     const availableOn = availabilityMap.get(ec.modelName) ?? [];
 
+    // Skip models no longer installed on this server (already removed)
+    if (!availableOn.includes(ec.serverName)) continue;
+
     if (loadCount >= 10 && requestCount <= 2 && churnScore >= 10) {
       considerRemoving.push({
         modelName: ec.modelName,
