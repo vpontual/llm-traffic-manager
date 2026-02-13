@@ -4,6 +4,7 @@ import useSWR from "swr";
 import type { ModelEvent } from "@/lib/types";
 import { useState } from "react";
 import Link from "next/link";
+import { ModelRecommendations, type RecommendationsResponse } from "@/components/model-recommendations";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -87,6 +88,12 @@ export default function HistoryPage() {
     { refreshInterval: 15000 }
   );
 
+  const { data: recommendations } = useSWR<RecommendationsResponse>(
+    `/api/recommendations?hours=${hours}`,
+    fetcher,
+    { refreshInterval: 60000 }
+  );
+
   // Group usage by server
   const serverGroups = new Map<string, UsageRecord[]>();
   for (const record of usage ?? []) {
@@ -128,6 +135,18 @@ export default function HistoryPage() {
           ))}
         </div>
       </div>
+
+      {/* Model Recommendations */}
+      {recommendations &&
+        (recommendations.considerRemoving.length > 0 ||
+          recommendations.considerAdding.length > 0) && (
+          <section className="mb-8">
+            <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
+              Model Recommendations
+            </h2>
+            <ModelRecommendations data={recommendations} />
+          </section>
+        )}
 
       {/* Usage Summary Per Server */}
       <section className="mb-8">
