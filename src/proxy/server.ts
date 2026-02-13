@@ -25,10 +25,59 @@ const MODEL_ENDPOINTS = new Set([
 // Endpoints where we aggregate responses from all servers
 const AGGREGATE_ENDPOINTS = new Set(["/api/tags", "/api/ps", "/v1/models"]);
 
-function getSourceIp(req: http.IncomingMessage): string {
+/**
+ * Parse SOURCE_NAMES env var: JSON object mapping IP → friendly name.
+ * Example: {"10.0.153.99":"dev-vm","172.28.0.1":"docker-local"}
+ */
+function loadSourceNames(): Map<string, string> {
+  const raw = process.env.SOURCE_NAMES;
+  if (!raw) return new Map();
+  try {
+    const parsed = JSON.parse(raw);
+    return new Map(Object.entries(parsed));
+  } catch {
+    console.warn("Failed to parse SOURCE_NAMES env var, ignoring");
+    return new Map();
+  }
+}
+
+const sourceNames = loadSourceNames();
+
+/**
+ * Resolve a human-friendly source identifier from the incoming request.
+ *
+ * Priority:
+ *   1. X-Ollama-Source header (services self-identify)
+ *   2. SOURCE_NAMES env mapping for the IP
+ *   3. Cleaned IP (strip ::ffff: IPv4-mapped prefix)
+ */
+function getSourceIdentifier(req: http.IncomingMessage): string {
+  // 1. Explicit header — services can self-identify
+  const sourceHeader = req.headers["x-ollama-source"];
+  if (typeof sourceHeader === "string" && sourceHeader.trim()) {
+    return sourceHeader.trim();
+  }
+
+  // Get the raw IP
   const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string") return forwarded.split(",")[0].trim();
-  return req.socket.remoteAddress ?? "unknown";
+  let ip: string;
+  if (typeof forwarded === "string") {
+    ip = forwarded.split(",")[0].trim();
+  } else {
+    ip = req.socket.remoteAddress ?? "unknown";
+  }
+
+  // Strip ::ffff: IPv4-mapped IPv6 prefix
+  if (ip.startsWith("::ffff:")) {
+    ip = ip.slice(7);
+  }
+
+  // 2. Check name mapping
+  const name = sourceNames.get(ip);
+  if (name) return name;
+
+  // 3. Fall back to cleaned IP
+  return ip;
 }
 
 async function readBody(req: http.IncomingMessage): Promise<Buffer> {
@@ -239,7 +288,7 @@ async function handleRequest(
   res: http.ServerResponse
 ) {
   const startTime = Date.now();
-  const sourceIp = getSourceIp(req);
+  const source = getSourceIdentifier(req);
   const path = (req.url ?? "/").split("?")[0];
   const method = req.method ?? "GET";
 
@@ -260,12 +309,12 @@ async function handleRequest(
       } else if (path === "/v1/models") {
         await handleAggregateModels(req, res);
       }
-      logRequest(sourceIp, null, path, method, null, null, 200, Date.now() - startTime);
+      logRequest(source, null, path, method, null, null, 200, Date.now() - startTime);
     } catch (err) {
       console.error(`Aggregate error for ${path}:`, err);
       res.writeHead(500);
       res.end(JSON.stringify({ error: "internal proxy error" }));
-      logRequest(sourceIp, null, path, method, null, null, 500, Date.now() - startTime);
+      logRequest(source, null, path, method, null, null, 500, Date.now() - startTime);
     }
     return;
   }
@@ -290,12 +339,12 @@ async function handleRequest(
   if (!route) {
     res.writeHead(503);
     res.end(JSON.stringify({ error: "no online servers available" }));
-    logRequest(sourceIp, model, path, method, null, null, 503, Date.now() - startTime);
+    logRequest(source, model, path, method, null, null, 503, Date.now() - startTime);
     return;
   }
 
   console.log(
-    `[proxy] ${sourceIp} → ${route.serverName} (${route.host}) | ${method} ${path}${model ? ` | model=${model}` : ""} | reason=${route.reason}`
+    `[proxy] ${source} → ${route.serverName} (${route.host}) | ${method} ${path}${model ? ` | model=${model}` : ""} | reason=${route.reason}`
   );
 
   // Proxy the request
@@ -303,13 +352,17 @@ async function handleRequest(
   const duration = Date.now() - startTime;
 
   // Log asynchronously (don't block response)
-  logRequest(sourceIp, model, path, method, route.serverId, route.host, statusCode, duration);
+  logRequest(source, model, path, method, route.serverId, route.host, statusCode, duration);
 }
 
 async function main() {
   console.log("Running database migrations...");
   await migrate(db, { migrationsFolder: "./drizzle" });
   console.log("Migrations applied");
+
+  if (sourceNames.size > 0) {
+    console.log(`Source name mappings: ${[...sourceNames.entries()].map(([ip, name]) => `${ip}→${name}`).join(", ")}`);
+  }
 
   const server = http.createServer(handleRequest);
 

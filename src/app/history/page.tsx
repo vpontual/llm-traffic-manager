@@ -210,7 +210,7 @@ export default function HistoryPage() {
       {/* Request Log Summary (from proxy) */}
       <section className="mb-8">
         <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
-          Proxy Requests by Source IP
+          Proxy Requests by Source
         </h2>
         {!requestsData?.summary || requestsData.summary.length === 0 ? (
           <div className="bg-surface-raised border border-border rounded-xl p-6 text-center text-text-muted">
@@ -221,7 +221,7 @@ export default function HistoryPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-xs text-text-muted uppercase tracking-wide">
-                  <th className="text-left p-3 pl-4">Source IP</th>
+                  <th className="text-left p-3 pl-4">Source</th>
                   <th className="text-left p-3">Model</th>
                   <th className="text-left p-3">Routed To</th>
                   <th className="text-right p-3">Requests</th>

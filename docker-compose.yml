@@ -10,6 +10,7 @@ services:
       - POLL_INTERVAL=10
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - SOURCE_NAMES={"172.28.0.1":"docker-local","172.22.0.1":"newsfeed","172.29.0.1":"constitutional","192.168.80.1":"trackacrypto","172.18.0.1":"newschat","192.168.48.1":"paperless","192.168.64.1":"nexus"}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:
