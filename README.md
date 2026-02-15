@@ -24,7 +24,7 @@ Built for anyone running multiple Ollama instances across different machines who
 - **Auto-Discovery** — Discover cron jobs from Docker containers via environment variables
 - **Multi-User Auth** — Cookie-based sessions with per-user Telegram notification preferences
 - **Telegram Alerts** — Server offline/online, overheating, low memory, and reboot notifications
-- **Plugin System** — Extensible architecture for community plugins (see [PLUGINS.md](PLUGINS.md))
+- **Plugin System** — Extensible architecture for community plugins (see [PLUGINS.md](docs/PLUGINS.md))
 - **OpenAI API Compatible** — Supports `/v1/*` endpoints
 
 ## Architecture
@@ -122,7 +122,7 @@ Ollama Fleet Manager supports a plugin architecture for extending functionality.
 
 **fleet-metrics** is the first official plugin — a lightweight Python agent that collects system metrics (CPU/GPU temperature, memory, disk, uptime) from each server in your fleet.
 
-See [PLUGINS.md](PLUGINS.md) for the full plugin guide, including how to create your own.
+See [PLUGINS.md](docs/PLUGINS.md) for the full plugin guide, including how to create your own.
 
 ## Ports
 
@@ -196,7 +196,7 @@ For shared or real environments, set explicit credentials before running smoke:
 SMOKE_USERNAME=your-user SMOKE_PASSWORD='your-secret' npm run smoke
 ```
 
-Pre-commit hooks run `npm run check` automatically. See [`TESTING.md`](./TESTING.md) for full details.
+Pre-commit hooks run `npm run check` automatically. See [`TESTING.md`](docs/TESTING.md) for full details.
 
 ## Contributing
 
