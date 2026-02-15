@@ -8,6 +8,9 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Dummy value so requireEnv("DATABASE_URL") doesn't throw during next build.
+# The real connection string is injected at runtime via docker-compose.
+ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN npm run build
 
 FROM node:22-alpine AS runner
