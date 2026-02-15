@@ -78,6 +78,10 @@ Pre-commit hooks run `npm run check` automatically. They're installed when you r
 
 Use the [bug report template](https://github.com/vpontual/ollamaproxy/issues/new?template=bug_report.md) when filing issues. Include steps to reproduce, expected behavior, and your environment details.
 
+## Security Issues
+
+For security vulnerabilities, follow the [Security Policy](SECURITY.md) and report privately.
+
 ## Feature Requests
 
 Use the [feature request template](https://github.com/vpontual/ollamaproxy/issues/new?template=feature_request.md) to propose new features.
