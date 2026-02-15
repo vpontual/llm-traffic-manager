@@ -108,6 +108,9 @@ docker run --rm -v "$PWD:/workspace" -w /workspace node:22-alpine sh -lc "npm ci
 
 - Hook did not run:
   - Verify `git config --get core.hooksPath` returns `.githooks`.
+- Hook cannot find `npm`:
+  - The hook attempts to load NVM from `$NVM_DIR` or `~/.nvm`.
+  - Ensure Node is installed for the current user and available via NVM or PATH.
 - Commit blocked:
   - Run `npm run check` and fix the reported failure.
 - Smoke test fails:
