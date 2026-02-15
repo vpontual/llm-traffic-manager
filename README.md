@@ -108,7 +108,7 @@ SOURCE_NAMES='{"172.28.0.1": "my-app"}'
 
 ### System Metrics (Optional)
 
-To display CPU/GPU temperature, memory, and disk metrics, install the lightweight metrics agent on each Ollama server. See the `fleet-metrics` directory for setup instructions.
+To display CPU/GPU temperature, memory, and disk metrics, install the lightweight metrics agent on each Ollama server. See the [fleet-metrics plugin](plugins/fleet-metrics/) for setup instructions.
 
 ## Ports
 

@@ -27,6 +27,18 @@ Thanks for your interest in contributing! Here's how to get started.
    npm run dev
    ```
 
+### Working on the Proxy
+
+If your changes involve request routing, load balancing, or the proxy server, you'll also need the proxy running:
+
+```bash
+# Build and start the proxy (separate terminal)
+npm run build:proxy
+npm run proxy
+```
+
+The dashboard runs on port 3000 and the proxy on port 11434. For UI-only changes, you only need `npm run dev`.
+
 ## Running Tests
 
 ```bash
