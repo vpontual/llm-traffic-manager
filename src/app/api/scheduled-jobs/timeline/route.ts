@@ -4,12 +4,13 @@ import { scheduledJobs } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { getNextExecutions, detectConflicts } from "@/lib/cron-utils";
 import type { ScheduledExecution, ConflictGroup } from "@/lib/types";
+import { getHoursWindow } from "@/lib/api/time-window";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
-  const hours = Math.min(parseInt(searchParams.get("hours") ?? "24", 10), 168);
+  const { hours } = getHoursWindow(searchParams, 24, 168);
 
   const now = new Date();
   const windowEnd = new Date(now.getTime() + hours * 60 * 60 * 1000);

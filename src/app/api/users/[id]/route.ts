@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
-import { requireAuth, hashPassword } from "@/lib/auth";
+import { hashPassword } from "@/lib/auth";
+import { forbiddenResponse, isSelfOrAdmin, withAuth } from "@/lib/api/route-helpers";
 import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -10,59 +11,49 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  let caller;
-  try {
-    caller = await requireAuth();
-  } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  return withAuth(async (caller) => {
+    const { id } = await params;
+    const targetId = Number.parseInt(id, 10);
+    const body = await request.json();
 
-  const { id } = await params;
-  const targetId = parseInt(id, 10);
-  const body = await request.json();
+    // Non-admin can only change their own password
+    if (!isSelfOrAdmin(caller, targetId)) {
+      return forbiddenResponse();
+    }
 
-  // Non-admin can only change their own password
-  if (!caller.isAdmin && caller.id !== targetId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
 
-  const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.password) {
+      updates.passwordHash = await hashPassword(body.password);
+    }
 
-  if (body.password) {
-    updates.passwordHash = await hashPassword(body.password);
-  }
+    if (caller.isAdmin && body.isAdmin !== undefined) {
+      updates.isAdmin = body.isAdmin;
+    }
 
-  if (caller.isAdmin && body.isAdmin !== undefined) {
-    updates.isAdmin = body.isAdmin;
-  }
+    await db.update(users).set(updates).where(eq(users.id, targetId));
 
-  await db.update(users).set(updates).where(eq(users.id, targetId));
-
-  return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true });
+  });
 }
 
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  let caller;
-  try {
-    caller = await requireAuth();
-  } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  return withAuth(async (caller) => {
+    if (!caller.isAdmin) {
+      return forbiddenResponse();
+    }
 
-  if (!caller.isAdmin) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+    const { id } = await params;
+    const targetId = Number.parseInt(id, 10);
 
-  const { id } = await params;
-  const targetId = parseInt(id, 10);
+    if (caller.id === targetId) {
+      return NextResponse.json({ error: "Cannot delete yourself" }, { status: 400 });
+    }
 
-  if (caller.id === targetId) {
-    return NextResponse.json({ error: "Cannot delete yourself" }, { status: 400 });
-  }
-
-  await db.delete(users).where(eq(users.id, targetId));
-  return NextResponse.json({ ok: true });
+    await db.delete(users).where(eq(users.id, targetId));
+    return NextResponse.json({ ok: true });
+  });
 }

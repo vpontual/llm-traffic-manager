@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { modelEvents, servers } from "@/lib/schema";
 import { eq, gte, desc, asc, sql } from "drizzle-orm";
+import { getHoursWindow } from "@/lib/api/time-window";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,7 @@ interface UsageRecord {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
-  const hours = parseInt(searchParams.get("hours") ?? "168", 10); // default 7 days
-  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+  const { since } = getHoursWindow(searchParams, 168); // default 7 days
 
   // Get all events in the time range
   const events = await db

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { modelEvents, requestLogs, servers, serverSnapshots } from "@/lib/schema";
 import { eq, gte, and, desc, sql } from "drizzle-orm";
+import { getHoursWindow } from "@/lib/api/time-window";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +28,7 @@ interface RecommendationsResponse {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
-  const hours = parseInt(searchParams.get("hours") ?? "168", 10);
-  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+  const { hours, since } = getHoursWindow(searchParams, 168);
 
   // 1. Get all servers and build availability map from latest snapshots
   const allServers = await db.select().from(servers);

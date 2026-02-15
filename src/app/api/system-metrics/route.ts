@@ -2,19 +2,18 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { systemMetrics } from "@/lib/schema";
 import { eq, and, sql } from "drizzle-orm";
+import { getHoursWindow } from "@/lib/api/time-window";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const serverId = parseInt(searchParams.get("serverId") ?? "0", 10);
-  const hours = parseInt(searchParams.get("hours") ?? "6", 10);
+  const { since } = getHoursWindow(searchParams, 6);
 
   if (!serverId) {
     return NextResponse.json({ error: "serverId required" }, { status: 400 });
   }
-
-  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
   // Sample ~1 row per minute to keep payloads reasonable
   const rows = await db
