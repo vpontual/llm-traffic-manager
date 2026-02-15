@@ -3,13 +3,13 @@ import { db } from "@/lib/db";
 import { serverEvents, servers } from "@/lib/schema";
 import { desc, eq, gte } from "drizzle-orm";
 import type { ServerEvent } from "@/lib/types";
+import { getHoursWindow } from "@/lib/api/time-window";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
-  const hours = parseInt(searchParams.get("hours") ?? "24", 10);
-  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+  const { since } = getHoursWindow(searchParams, 24);
 
   const rows = await db
     .select({

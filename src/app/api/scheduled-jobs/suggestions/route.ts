@@ -4,6 +4,7 @@ import { scheduledJobs } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { findOpenSlots } from "@/lib/cron-utils";
 import type { TimeSlot } from "@/lib/types";
+import { getHoursParam } from "@/lib/api/time-window";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const model = searchParams.get("model");
   const durationMs = parseInt(searchParams.get("durationMs") ?? "60000", 10);
-  const hours = Math.min(parseInt(searchParams.get("hours") ?? "24", 10), 168);
+  const hours = getHoursParam(searchParams, 24, 168);
 
   if (!model) {
     return NextResponse.json(
