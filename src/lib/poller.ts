@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { servers, serverSnapshots, modelEvents, systemMetrics } from "./schema";
+import { servers, serverSnapshots, modelEvents, systemMetrics, serverEvents } from "./schema";
 import { pollServer } from "./ollama";
 import { fetchSystemMetrics } from "./metrics";
 import { eq } from "drizzle-orm";
@@ -8,6 +8,10 @@ import { checkServerAlerts } from "./alerts";
 
 // In-memory state for diffing loaded models between polls
 const previousModels = new Map<number, Set<string>>();
+
+// In-memory state for detecting server lifecycle transitions
+const previousOnline = new Map<number, boolean>();
+const previousBootSet = new Map<number, Set<string>>();
 
 function getServerConfigs(): ServerConfig[] {
   const raw = process.env.OLLAMA_SERVERS;
@@ -76,6 +80,8 @@ async function pollAllServers() {
             serverId: server.id,
             cpuTempC: sysMetrics.temperatures.cpu != null ? Math.round(sysMetrics.temperatures.cpu) : null,
             gpuTempC: sysMetrics.temperatures.gpu != null ? Math.round(sysMetrics.temperatures.gpu) : null,
+            cpuPercent: sysMetrics.cpu_percent != null ? Math.round(sysMetrics.cpu_percent) : null,
+            gpuPercent: sysMetrics.gpu_percent != null ? Math.round(sysMetrics.gpu_percent) : null,
             memTotalMb: sysMetrics.memory.total_mb,
             memUsedMb: sysMetrics.memory.used_mb,
             memAvailableMb: sysMetrics.memory.available_mb,
@@ -87,8 +93,6 @@ async function pollAllServers() {
             uptimeSeconds: sysMetrics.uptime_seconds,
             diskTotalGb: sysMetrics.disk.total_gb,
             diskUsedGb: sysMetrics.disk.used_gb,
-            cpuPercent: sysMetrics.cpu_percent != null ? Math.round(sysMetrics.cpu_percent) : null,
-            gpuPercent: sysMetrics.gpu_percent != null ? Math.round(sysMetrics.gpu_percent) : null,
             recentBoots: sysMetrics.recent_boots,
           });
         }
@@ -96,7 +100,67 @@ async function pollAllServers() {
         // Check for alert conditions
         await checkServerAlerts(server.name, result.isOnline, sysMetrics);
 
-        // Detect model changes
+        // --- Detect server lifecycle transitions ---
+        const wasOnline = previousOnline.get(server.id);
+
+        // Online/Offline transitions (skip first poll to avoid false positives)
+        if (wasOnline !== undefined) {
+          if (wasOnline && !result.isOnline) {
+            await db.insert(serverEvents).values({
+              serverId: server.id,
+              eventType: "offline",
+              detail: null,
+            });
+            console.log(`[${server.name}] Server went offline`);
+          } else if (!wasOnline && result.isOnline) {
+            await db.insert(serverEvents).values({
+              serverId: server.id,
+              eventType: "online",
+              detail: null,
+            });
+            console.log(`[${server.name}] Server came online`);
+          }
+        }
+        previousOnline.set(server.id, result.isOnline);
+
+        // Reboot detection via boot list diffing
+        if (sysMetrics?.recent_boots && sysMetrics.recent_boots.length > 0) {
+          const currentBoots = new Set(sysMetrics.recent_boots);
+          const prevBoots = previousBootSet.get(server.id);
+
+          if (prevBoots) {
+            for (const boot of currentBoots) {
+              if (!prevBoots.has(boot)) {
+                // New boot detected — look up cause from metrics
+                const cause = sysMetrics.reboot_causes?.[boot];
+                let detail: string | null = null;
+                if (cause) {
+                  if (cause.cause === "user_command") {
+                    detail = cause.user
+                      ? `${cause.detail} (${cause.user})`
+                      : cause.detail;
+                  } else if (cause.cause === "power_button") {
+                    detail = cause.detail;
+                  }
+                  // For "unknown", leave detail null
+                }
+
+                await db.insert(serverEvents).values({
+                  serverId: server.id,
+                  eventType: "reboot",
+                  detail,
+                  occurredAt: new Date(boot),
+                });
+                console.log(`[${server.name}] Reboot detected: ${detail ?? "unknown cause"}`);
+                break; // One event per poll cycle is enough
+              }
+            }
+          }
+
+          previousBootSet.set(server.id, currentBoots);
+        }
+
+        // --- Detect model changes ---
         const currentModelNames = new Set(
           result.runningModels.map((m) => m.name)
         );
@@ -154,6 +218,7 @@ async function cleanOldSnapshots() {
   await Promise.all([
     db.delete(serverSnapshots).where(sql`${serverSnapshots.polledAt} < ${sevenDaysAgo}`),
     db.delete(systemMetrics).where(sql`${systemMetrics.polledAt} < ${sevenDaysAgo}`),
+    db.delete(serverEvents).where(sql`${serverEvents.occurredAt} < ${sevenDaysAgo}`),
   ]);
 }
 

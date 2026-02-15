@@ -5,6 +5,10 @@ export function isTelegramConfigured(): boolean {
   return !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID);
 }
 
+export function getTelegramConfig() {
+  return { botToken: TELEGRAM_BOT_TOKEN, chatId: TELEGRAM_CHAT_ID };
+}
+
 export async function sendTelegramMessage(text: string): Promise<void> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
 
@@ -25,5 +29,28 @@ export async function sendTelegramMessage(text: string): Promise<void> {
     }
   } catch (err) {
     console.error("[Telegram] Error:", err);
+  }
+}
+
+export async function sendTelegramReply(chatId: string | number, text: string): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return;
+
+  try {
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
+    });
+    if (!res.ok) {
+      console.error(`[Telegram] Reply failed: ${res.status} ${res.statusText}`);
+    }
+  } catch (err) {
+    console.error("[Telegram] Reply error:", err);
   }
 }

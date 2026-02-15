@@ -95,6 +95,15 @@ export interface ModelEvent {
   occurredAt: string;
 }
 
+export interface ServerEvent {
+  id: number;
+  serverId: number;
+  serverName: string;
+  eventType: "offline" | "online" | "reboot";
+  detail: string | null;
+  occurredAt: string;
+}
+
 // Scheduled Jobs types
 
 export interface ScheduledJob {

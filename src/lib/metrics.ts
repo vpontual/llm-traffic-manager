@@ -1,5 +1,11 @@
 const TIMEOUT_MS = 3000;
 
+export interface RebootCause {
+  cause: string; // "user_command" | "power_button" | "unknown"
+  detail: string;
+  user?: string;
+}
+
 export interface MetricsAgentResponse {
   hostname: string;
   uptime_seconds: number;
@@ -16,6 +22,7 @@ export interface MetricsAgentResponse {
   cpu_percent: number | null;
   gpu_percent: number | null;
   recent_boots: string[];
+  reboot_causes: Record<string, RebootCause>;
   disk: {
     total_gb: number;
     used_gb: number;

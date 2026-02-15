@@ -5,7 +5,8 @@ import { ServerGrid } from "@/components/server-grid";
 import { FleetSummary } from "@/components/fleet-summary";
 import { TimelineChart } from "@/components/timeline-chart";
 import { AvailableModels } from "@/components/available-models";
-import type { ServerState, ModelEvent } from "@/lib/types";
+import { ServerActivity } from "@/components/server-activity";
+import type { ServerState, ModelEvent, ServerEvent } from "@/lib/types";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
@@ -22,6 +23,12 @@ export default function Dashboard() {
 
   const { data: events } = useSWR<ModelEvent[]>(
     `/api/events?hours=${timelineHours}`,
+    fetcher,
+    { refreshInterval: 10000 }
+  );
+
+  const { data: serverEventData } = useSWR<ServerEvent[]>(
+    "/api/server-events?hours=24",
     fetcher,
     { refreshInterval: 10000 }
   );
@@ -66,6 +73,12 @@ export default function Dashboard() {
             </span>
           )}
           <Link
+            href="/schedule"
+            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
+          >
+            Schedule
+          </Link>
+          <Link
             href="/history"
             className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
           >
@@ -98,6 +111,13 @@ export default function Dashboard() {
           <section className="mb-6">
             <FleetSummary servers={servers} />
           </section>
+
+          {/* Server activity log */}
+          {serverEventData && serverEventData.length > 0 && (
+            <section className="mb-6">
+              <ServerActivity events={serverEventData} />
+            </section>
+          )}
 
           {/* Available models across fleet */}
           <section className="mb-6">

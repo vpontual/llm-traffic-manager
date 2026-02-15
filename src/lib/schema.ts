@@ -95,3 +95,13 @@ export const scheduledJobs = pgTable("scheduled_jobs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const serverEvents = pgTable("server_events", {
+  id: serial("id").primaryKey(),
+  serverId: integer("server_id")
+    .references(() => servers.id)
+    .notNull(),
+  eventType: text("event_type").notNull(), // "offline" | "online" | "reboot"
+  detail: text("detail"),
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+});
