@@ -6,12 +6,12 @@ import {
   resolveServerByName,
 } from "./router";
 import { db } from "../lib/db";
-import { requestLogs } from "../lib/schema";
+import { requestLogs, users } from "../lib/schema";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
 const PROXY_PORT = 11434;
 
-// Endpoints where we extract a `model` field from the request body
+// Endpoints where we extract a model field from the request body
 const MODEL_ENDPOINTS = new Set([
   "/api/generate",
   "/api/chat",
@@ -30,9 +30,33 @@ const MODEL_ENDPOINTS = new Set([
 // Endpoints where we aggregate responses from all servers
 const AGGREGATE_ENDPOINTS = new Set(["/api/tags", "/api/ps", "/v1/models"]);
 
+// --- API Key cache for user identification ---
+let apiKeyCache = new Map<string, { userId: number; username: string }>();
+let lastKeyRefresh = 0;
+const KEY_CACHE_TTL_MS = 30000; // 30 seconds
+
+async function refreshApiKeyCache() {
+  const now = Date.now();
+  if (now - lastKeyRefresh < KEY_CACHE_TTL_MS) return;
+
+  try {
+    const allUsers = await db
+      .select({ id: users.id, username: users.username, apiKey: users.apiKey })
+      .from(users);
+
+    const newCache = new Map<string, { userId: number; username: string }>();
+    for (const u of allUsers) {
+      newCache.set(u.apiKey, { userId: u.id, username: u.username });
+    }
+    apiKeyCache = newCache;
+    lastKeyRefresh = now;
+  } catch {
+    // On error, keep old cache
+  }
+}
+
 /**
- * Parse SOURCE_NAMES env var: JSON object mapping IP → friendly name.
- * Example: {"10.0.153.99":"dev-vm","172.28.0.1":"docker-local"}
+ * Parse SOURCE_NAMES env var: JSON object mapping IP -> friendly name.
  */
 function loadSourceNames(): Map<string, string> {
   const raw = process.env.SOURCE_NAMES;
@@ -52,15 +76,26 @@ const sourceNames = loadSourceNames();
  * Resolve a human-friendly source identifier from the incoming request.
  *
  * Priority:
- *   1. X-Ollama-Source header (services self-identify)
- *   2. SOURCE_NAMES env mapping for the IP
- *   3. Cleaned IP (strip ::ffff: IPv4-mapped prefix)
+ *   1. X-Ollama-Api-Key header (user identification)
+ *   2. X-Ollama-Source header (services self-identify)
+ *   3. SOURCE_NAMES env mapping for the IP
+ *   4. Cleaned IP (strip ::ffff: IPv4-mapped prefix)
  */
-function getSourceIdentifier(req: http.IncomingMessage): string {
-  // 1. Explicit header — services can self-identify
+function getSourceIdentifier(req: http.IncomingMessage): { source: string; userId: number | null } {
+  // 1. API key header — user identification
+  const apiKeyHeader = req.headers["x-ollama-api-key"];
+  if (typeof apiKeyHeader === "string" && apiKeyHeader.trim()) {
+    const user = apiKeyCache.get(apiKeyHeader.trim());
+    if (user) {
+      return { source: user.username, userId: user.userId };
+    }
+    // Invalid key — fall through to other methods
+  }
+
+  // 2. Explicit header — services can self-identify
   const sourceHeader = req.headers["x-ollama-source"];
   if (typeof sourceHeader === "string" && sourceHeader.trim()) {
-    return sourceHeader.trim();
+    return { source: sourceHeader.trim(), userId: null };
   }
 
   // Get the raw IP
@@ -77,12 +112,12 @@ function getSourceIdentifier(req: http.IncomingMessage): string {
     ip = ip.slice(7);
   }
 
-  // 2. Check name mapping
+  // 3. Check name mapping
   const name = sourceNames.get(ip);
-  if (name) return name;
+  if (name) return { source: name, userId: null };
 
-  // 3. Fall back to cleaned IP
-  return ip;
+  // 4. Fall back to cleaned IP
+  return { source: ip, userId: null };
 }
 
 async function readBody(req: http.IncomingMessage): Promise<Buffer> {
@@ -96,7 +131,6 @@ async function readBody(req: http.IncomingMessage): Promise<Buffer> {
 function extractModel(body: Buffer, path: string): string | null {
   try {
     const parsed = JSON.parse(body.toString());
-    // OpenAI compat uses "model" too
     return parsed.model ?? parsed.name ?? null;
   } catch {
     return null;
@@ -105,6 +139,7 @@ function extractModel(body: Buffer, path: string): string | null {
 
 async function logRequest(
   sourceIp: string,
+  userId: number | null,
   model: string | null,
   endpoint: string,
   method: string,
@@ -116,6 +151,7 @@ async function logRequest(
   try {
     await db.insert(requestLogs).values({
       sourceIp,
+      userId,
       model,
       endpoint,
       method,
@@ -198,7 +234,6 @@ async function handleAggregateTags(
         const resp = await fetch(`http://${server.host}/api/tags`);
         const data = await resp.json();
         for (const model of data.models ?? []) {
-          // Keep the first instance (don't override)
           if (!allModels.has(model.name)) {
             allModels.set(model.name, model);
           }
@@ -293,7 +328,11 @@ async function handleRequest(
   res: http.ServerResponse
 ) {
   const startTime = Date.now();
-  const source = getSourceIdentifier(req);
+
+  // Refresh API key cache (cheap with TTL)
+  await refreshApiKeyCache();
+
+  const { source, userId } = getSourceIdentifier(req);
   const path = (req.url ?? "/").split("?")[0];
   const method = req.method ?? "GET";
 
@@ -314,12 +353,12 @@ async function handleRequest(
       } else if (path === "/v1/models") {
         await handleAggregateModels(req, res);
       }
-      logRequest(source, null, path, method, null, null, 200, Date.now() - startTime);
+      logRequest(source, userId, null, path, method, null, null, 200, Date.now() - startTime);
     } catch (err) {
       console.error(`Aggregate error for ${path}:`, err);
       res.writeHead(500);
       res.end(JSON.stringify({ error: "internal proxy error" }));
-      logRequest(source, null, path, method, null, null, 500, Date.now() - startTime);
+      logRequest(source, userId, null, path, method, null, null, 500, Date.now() - startTime);
     }
     return;
   }
@@ -340,7 +379,6 @@ async function handleRequest(
   let route;
   if (pinServerName) {
     route = await resolveServerByName(pinServerName);
-    // Fall through to normal routing if pinned server is offline
   }
   if (!route && model) {
     route = await routeModel(model);
@@ -352,7 +390,7 @@ async function handleRequest(
   if (!route) {
     res.writeHead(503);
     res.end(JSON.stringify({ error: "no online servers available" }));
-    logRequest(source, model, path, method, null, null, 503, Date.now() - startTime);
+    logRequest(source, userId, model, path, method, null, null, 503, Date.now() - startTime);
     return;
   }
 
@@ -365,7 +403,7 @@ async function handleRequest(
   const duration = Date.now() - startTime;
 
   // Log asynchronously (don't block response)
-  logRequest(source, model, path, method, route.serverId, route.host, statusCode, duration);
+  logRequest(source, userId, model, path, method, route.serverId, route.host, statusCode, duration);
 }
 
 async function main() {
@@ -374,7 +412,7 @@ async function main() {
   console.log("Migrations applied");
 
   if (sourceNames.size > 0) {
-    console.log(`Source name mappings: ${[...sourceNames.entries()].map(([ip, name]) => `${ip}→${name}`).join(", ")}`);
+    console.log(`Source name mappings: ${[...sourceNames.entries()].map(([ip, name]) => `${ip}\u2192${name}`).join(", ")}`);
   }
 
   const server = http.createServer(handleRequest);

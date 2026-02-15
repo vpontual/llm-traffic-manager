@@ -9,10 +9,14 @@ import { ServerActivity } from "@/components/server-activity";
 import type { ServerState, ModelEvent, ServerEvent } from "@/lib/types";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/use-auth";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const router = useRouter();
   const [timelineHours, setTimelineHours] = useState(24);
 
   const { data: servers, isLoading: serversLoading } = useSWR<ServerState[]>(
@@ -89,6 +93,26 @@ export default function Dashboard() {
             className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
           >
             Refresh
+          </button>
+          <Link
+            href="/settings"
+            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
+          >
+            Settings
+          </Link>
+          {user?.isAdmin && (
+            <Link
+              href="/admin/users"
+              className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
+            >
+              Users
+            </Link>
+          )}
+          <button
+            onClick={() => fetch("/api/auth/logout", { method: "POST" }).then(() => router.push("/login"))}
+            className="px-3 py-1.5 text-sm bg-surface-raised border border-red-800/50 rounded-lg text-red-400 hover:text-red-300 hover:border-red-700 transition-colors"
+          >
+            Logout
           </button>
         </div>
       </div>

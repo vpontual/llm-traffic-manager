@@ -5,6 +5,7 @@ import { fetchSystemMetrics } from "./metrics";
 import { eq } from "drizzle-orm";
 import type { ServerConfig, OllamaRunningModel } from "./types";
 import { checkServerAlerts } from "./alerts";
+import { notifySubscribedUsers } from "./user-notifications";
 
 // In-memory state for diffing loaded models between polls
 const previousModels = new Map<number, Set<string>>();
@@ -112,6 +113,12 @@ async function pollAllServers() {
               detail: null,
             });
             console.log(`[${server.name}] Server went offline`);
+            await notifySubscribedUsers({
+              serverId: server.id,
+              serverName: server.name,
+              eventType: "offline",
+              detail: null,
+            });
           } else if (!wasOnline && result.isOnline) {
             await db.insert(serverEvents).values({
               serverId: server.id,
@@ -119,6 +126,12 @@ async function pollAllServers() {
               detail: null,
             });
             console.log(`[${server.name}] Server came online`);
+            await notifySubscribedUsers({
+              serverId: server.id,
+              serverName: server.name,
+              eventType: "online",
+              detail: null,
+            });
           }
         }
         previousOnline.set(server.id, result.isOnline);
@@ -152,6 +165,12 @@ async function pollAllServers() {
                   occurredAt: new Date(boot),
                 });
                 console.log(`[${server.name}] Reboot detected: ${detail ?? "unknown cause"}`);
+                await notifySubscribedUsers({
+                  serverId: server.id,
+                  serverName: server.name,
+                  eventType: "reboot",
+                  detail,
+                });
                 break; // One event per poll cycle is enough
               }
             }

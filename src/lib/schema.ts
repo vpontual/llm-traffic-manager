@@ -71,6 +71,7 @@ export const systemMetrics = pgTable("system_metrics", {
 export const requestLogs = pgTable("request_logs", {
   id: serial("id").primaryKey(),
   sourceIp: text("source_ip").notNull(),
+  userId: integer("user_id").references(() => users.id),
   model: text("model"),
   endpoint: text("endpoint").notNull(),
   method: text("method").notNull(),
@@ -104,4 +105,51 @@ export const serverEvents = pgTable("server_events", {
   eventType: text("event_type").notNull(), // "offline" | "online" | "reboot"
   detail: text("detail"),
   occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+});
+
+// --- Multi-user tables ---
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  isAdmin: boolean("is_admin").default(false).notNull(),
+  apiKey: text("api_key").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const sessions = pgTable("sessions", {
+  id: text("id").primaryKey(),
+  userId: integer("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const userTelegramConfigs = pgTable("user_telegram_configs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull()
+    .unique(),
+  botToken: text("bot_token").notNull(),
+  chatId: text("chat_id").notNull(),
+  isEnabled: boolean("is_enabled").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const userServerSubscriptions = pgTable("user_server_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  serverId: integer("server_id")
+    .references(() => servers.id, { onDelete: "cascade" })
+    .notNull(),
+  notifyOffline: boolean("notify_offline").default(true).notNull(),
+  notifyOnline: boolean("notify_online").default(true).notNull(),
+  notifyReboot: boolean("notify_reboot").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
