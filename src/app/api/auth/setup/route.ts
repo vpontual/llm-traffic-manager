@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
 import { hashPassword, generateApiKey, createSession, isFirstUser, SESSION_COOKIE } from "@/lib/auth";
+import { validateSetupInput } from "@/lib/validations/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,17 +11,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Setup already completed" }, { status: 403 });
   }
 
-  const { username, password } = await request.json();
-
-  if (!username || !password || password.length < 4) {
+  const validation = validateSetupInput(await request.json());
+  if (!validation.ok) {
     return NextResponse.json(
-      { error: "Username required, password must be at least 4 characters" },
+      { error: validation.error },
       { status: 400 }
     );
   }
 
+  const { username, password } = validation.data;
+
   const [user] = await db.insert(users).values({
-    username: username.toLowerCase().trim(),
+    username,
     passwordHash: await hashPassword(password),
     isAdmin: true,
     apiKey: generateApiKey(),

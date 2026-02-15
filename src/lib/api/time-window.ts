@@ -1,3 +1,5 @@
+import { parsePositiveInt } from "@/lib/validations/numbers";
+
 const HOUR_MS = 60 * 60 * 1000;
 
 export function getHoursParam(
@@ -5,10 +7,7 @@ export function getHoursParam(
   defaultHours: number,
   maxHours?: number
 ): number {
-  const hours = Number.parseInt(
-    searchParams.get("hours") ?? String(defaultHours),
-    10
-  );
+  const hours = parsePositiveInt(searchParams.get("hours"), defaultHours);
 
   if (maxHours === undefined) {
     return hours;

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
 import { generateApiKey } from "@/lib/auth";
-import { forbiddenResponse, isSelfOrAdmin, withAuth } from "@/lib/api/route-helpers";
+import { forbiddenResponse, isSelfOrAdmin, jsonError, withAuth } from "@/lib/api/route-helpers";
 import { eq } from "drizzle-orm";
+import { validateNumericId } from "@/lib/validations/numbers";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,11 @@ export async function POST(
 ) {
   return withAuth(async (caller) => {
     const { id } = await params;
-    const targetId = Number.parseInt(id, 10);
+    const targetIdValidation = validateNumericId(id, "user ID");
+    if (!targetIdValidation.ok) {
+      return jsonError(targetIdValidation.error, 400);
+    }
+    const targetId = targetIdValidation.data;
 
     // Admin can regen anyone's key, users can only regen their own
     if (!isSelfOrAdmin(caller, targetId)) {

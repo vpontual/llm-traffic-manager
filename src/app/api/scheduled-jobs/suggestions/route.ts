@@ -4,22 +4,20 @@ import { scheduledJobs } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { findOpenSlots } from "@/lib/cron-utils";
 import type { TimeSlot } from "@/lib/types";
-import { getHoursParam } from "@/lib/api/time-window";
+import { validateScheduledJobSuggestionsInput } from "@/lib/validations/scheduled-jobs";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
-  const model = searchParams.get("model");
-  const durationMs = parseInt(searchParams.get("durationMs") ?? "60000", 10);
-  const hours = getHoursParam(searchParams, 24, 168);
-
-  if (!model) {
+  const validation = validateScheduledJobSuggestionsInput(searchParams);
+  if (!validation.ok) {
     return NextResponse.json(
-      { error: "Missing required parameter: model" },
+      { error: validation.error },
       { status: 400 }
     );
   }
+  const { model, durationMs, hours } = validation.data;
 
   // Get all enabled jobs
   const jobs = await db

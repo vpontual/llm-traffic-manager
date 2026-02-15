@@ -3,7 +3,6 @@ import { db } from "@/lib/db";
 import { scheduledJobs, servers } from "@/lib/schema";
 import { desc, eq } from "drizzle-orm";
 import {
-  isValidCron,
   detectConflicts,
 } from "@/lib/cron-utils";
 import type { ScheduledJob } from "@/lib/types";
@@ -14,6 +13,7 @@ import {
   toScheduledJob,
   toScheduledJobWithServerName,
 } from "@/lib/scheduled-jobs";
+import { validateCreateScheduledJobInput } from "@/lib/validations/scheduled-jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -47,34 +47,24 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const validation = validateCreateScheduledJobInput(await request.json());
+    if (!validation.ok) {
+      return NextResponse.json(
+        { error: validation.error },
+        { status: 400 }
+      );
+    }
 
     const {
       name,
       description,
       sourceIdentifier,
       cronExpression,
-      timezone = "UTC",
+      timezone,
       targetModel,
       preferredServerId,
-      expectedDurationMs = 60000,
-    } = body;
-
-    // Validate required fields
-    if (!name || !sourceIdentifier || !cronExpression || !targetModel) {
-      return NextResponse.json(
-        { error: "Missing required fields: name, sourceIdentifier, cronExpression, targetModel" },
-        { status: 400 }
-      );
-    }
-
-    // Validate cron expression
-    if (!isValidCron(cronExpression)) {
-      return NextResponse.json(
-        { error: "Invalid cron expression" },
-        { status: 400 }
-      );
-    }
+      expectedDurationMs,
+    } = validation.data;
 
     // Insert the job
     const [inserted] = await db

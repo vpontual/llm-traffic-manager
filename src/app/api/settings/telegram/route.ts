@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { userTelegramConfigs } from "@/lib/schema";
 import { withAuth } from "@/lib/api/route-helpers";
 import { eq } from "drizzle-orm";
+import { validateTelegramConfigInput } from "@/lib/validations/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +21,12 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   return withAuth(async (user) => {
-    const { botToken, chatId, isEnabled } = await request.json();
-
-    if (!botToken || !chatId) {
-      return NextResponse.json({ error: "Bot token and chat ID required" }, { status: 400 });
+    const validation = validateTelegramConfigInput(await request.json());
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
+
+    const { botToken, chatId, isEnabled } = validation.data;
 
     // Validate bot token by calling getMe
     try {
@@ -46,14 +48,14 @@ export async function PUT(request: NextRequest) {
     if (existing) {
       await db
         .update(userTelegramConfigs)
-        .set({ botToken, chatId, isEnabled: isEnabled ?? true })
+        .set({ botToken, chatId, isEnabled })
         .where(eq(userTelegramConfigs.userId, user.id));
     } else {
       await db.insert(userTelegramConfigs).values({
         userId: user.id,
         botToken,
         chatId,
-        isEnabled: isEnabled ?? true,
+        isEnabled,
       });
     }
 

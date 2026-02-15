@@ -4,6 +4,7 @@ import { users } from "@/lib/schema";
 import { hashPassword, generateApiKey } from "@/lib/auth";
 import { withAdmin } from "@/lib/api/route-helpers";
 import { eq } from "drizzle-orm";
+import { validateNewUserInput } from "@/lib/validations/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -24,20 +25,21 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   return withAdmin(async () => {
-    const { username, password, isAdmin } = await request.json();
-
-    if (!username || !password || password.length < 4) {
+    const validation = validateNewUserInput(await request.json());
+    if (!validation.ok) {
       return NextResponse.json(
-        { error: "Username required, password at least 4 characters" },
+        { error: validation.error },
         { status: 400 }
       );
     }
+
+    const { username, password, isAdmin } = validation.data;
 
     // Check uniqueness
     const [existing] = await db
       .select({ id: users.id })
       .from(users)
-      .where(eq(users.username, username.toLowerCase().trim()))
+      .where(eq(users.username, username))
       .limit(1);
 
     if (existing) {
@@ -45,9 +47,9 @@ export async function POST(request: NextRequest) {
     }
 
     const [user] = await db.insert(users).values({
-      username: username.toLowerCase().trim(),
+      username,
       passwordHash: await hashPassword(password),
-      isAdmin: isAdmin ?? false,
+      isAdmin,
       apiKey: generateApiKey(),
     }).returning({
       id: users.id,

@@ -2,15 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { scheduledJobs, servers } from "@/lib/schema";
 import { eq } from "drizzle-orm";
-import { isValidCron } from "@/lib/cron-utils";
 import type { ScheduledJob } from "@/lib/types";
-import { jsonError, parseNumericId } from "@/lib/api/route-helpers";
+import { jsonError } from "@/lib/api/route-helpers";
 import {
   getPreferredServerName,
   scheduledJobWithServerSelect,
   toScheduledJob,
   toScheduledJobWithServerName,
 } from "@/lib/scheduled-jobs";
+import {
+  validateScheduledJobUpdates,
+} from "@/lib/validations/scheduled-jobs";
+import { validateNumericId } from "@/lib/validations/numbers";
 
 export const dynamic = "force-dynamic";
 
@@ -19,11 +22,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const jobId = parseNumericId(id);
-
-  if (jobId === null) {
-    return jsonError("Invalid job ID", 400);
+  const jobIdValidation = validateNumericId(id, "job ID");
+  if (!jobIdValidation.ok) {
+    return jsonError(jobIdValidation.error, 400);
   }
+  const jobId = jobIdValidation.data;
 
   const [row] = await db
     .select(scheduledJobWithServerSelect)
@@ -47,47 +50,21 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const jobId = parseNumericId(id);
-
-    if (jobId === null) {
-      return jsonError("Invalid job ID", 400);
+    const jobIdValidation = validateNumericId(id, "job ID");
+    if (!jobIdValidation.ok) {
+      return jsonError(jobIdValidation.error, 400);
     }
+    const jobId = jobIdValidation.data;
 
-    const body = await request.json();
-    const {
-      name,
-      description,
-      sourceIdentifier,
-      cronExpression,
-      timezone,
-      targetModel,
-      preferredServerId,
-      expectedDurationMs,
-      isEnabled,
-    } = body;
-
-    // Validate cron if provided
-    if (cronExpression && !isValidCron(cronExpression)) {
+    const updatesValidation = validateScheduledJobUpdates(await request.json());
+    if (!updatesValidation.ok) {
       return NextResponse.json(
-        { error: "Invalid cron expression" },
+        { error: updatesValidation.error },
         { status: 400 }
       );
     }
 
-    // Build update object with only provided fields
-    const updates: Record<string, unknown> = {
-      updatedAt: new Date(),
-    };
-
-    if (name !== undefined) updates.name = name;
-    if (description !== undefined) updates.description = description;
-    if (sourceIdentifier !== undefined) updates.sourceIdentifier = sourceIdentifier;
-    if (cronExpression !== undefined) updates.cronExpression = cronExpression;
-    if (timezone !== undefined) updates.timezone = timezone;
-    if (targetModel !== undefined) updates.targetModel = targetModel;
-    if (preferredServerId !== undefined) updates.preferredServerId = preferredServerId;
-    if (expectedDurationMs !== undefined) updates.expectedDurationMs = expectedDurationMs;
-    if (isEnabled !== undefined) updates.isEnabled = isEnabled;
+    const updates = updatesValidation.data;
 
     const [updated] = await db
       .update(scheduledJobs)
@@ -120,11 +97,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const jobId = parseNumericId(id);
-
-  if (jobId === null) {
-    return jsonError("Invalid job ID", 400);
+  const jobIdValidation = validateNumericId(id, "job ID");
+  if (!jobIdValidation.ok) {
+    return jsonError(jobIdValidation.error, 400);
   }
+  const jobId = jobIdValidation.data;
 
   const [deleted] = await db
     .delete(scheduledJobs)

@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
 import { hashPassword } from "@/lib/auth";
-import { forbiddenResponse, isSelfOrAdmin, withAuth } from "@/lib/api/route-helpers";
+import { forbiddenResponse, isSelfOrAdmin, jsonError, withAuth } from "@/lib/api/route-helpers";
 import { eq } from "drizzle-orm";
+import { validateNumericId } from "@/lib/validations/numbers";
+import { validateUserUpdateInput } from "@/lib/validations/users";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +15,16 @@ export async function PATCH(
 ) {
   return withAuth(async (caller) => {
     const { id } = await params;
-    const targetId = Number.parseInt(id, 10);
-    const body = await request.json();
+    const targetIdValidation = validateNumericId(id, "user ID");
+    if (!targetIdValidation.ok) {
+      return jsonError(targetIdValidation.error, 400);
+    }
+    const targetId = targetIdValidation.data;
+    const bodyValidation = validateUserUpdateInput(await request.json());
+    if (!bodyValidation.ok) {
+      return jsonError(bodyValidation.error, 400);
+    }
+    const body = bodyValidation.data;
 
     // Non-admin can only change their own password
     if (!isSelfOrAdmin(caller, targetId)) {
@@ -47,7 +57,11 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const targetId = Number.parseInt(id, 10);
+    const targetIdValidation = validateNumericId(id, "user ID");
+    if (!targetIdValidation.ok) {
+      return jsonError(targetIdValidation.error, 400);
+    }
+    const targetId = targetIdValidation.data;
 
     if (caller.id === targetId) {
       return NextResponse.json({ error: "Cannot delete yourself" }, { status: 400 });
