@@ -5,14 +5,14 @@ services:
       - "3334:3000"
       - "11434:11434"
     environment:
-      - DATABASE_URL=postgresql://ollama_fleet:password@db:5432/ollama_fleet
-      - OLLAMA_SERVERS=[{"name":"Jetson Nano 1","host":"10.0.154.234:11434","ramGb":16},{"name":"Jetson Nano 2","host":"10.0.154.244:11434","ramGb":16},{"name":"Orin AGX","host":"10.0.154.245:11434","ramGb":64},{"name":"DGX Spark","host":"10.0.154.246:11434","ramGb":128}]
-      - POLL_INTERVAL=10
+      - DATABASE_URL=${DATABASE_URL:-postgresql://ollama_fleet:password@db:5432/ollama_fleet}
+      - OLLAMA_SERVERS=${OLLAMA_SERVERS}
+      - POLL_INTERVAL=${POLL_INTERVAL:-10}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
-      - SOURCE_NAMES={"172.28.0.1":"docker-local","172.22.0.1":"newsfeed","172.29.0.1":"constitutional","192.168.80.1":"trackacrypto","172.18.0.1":"newschat","192.168.48.1":"paperless","192.168.64.1":"nexus"}
+      - SOURCE_NAMES=${SOURCE_NAMES:-{}}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:
