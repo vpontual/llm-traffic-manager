@@ -5,8 +5,7 @@ import { ServerGrid } from "@/components/server-grid";
 import { FleetSummary } from "@/components/fleet-summary";
 import { TimelineChart } from "@/components/timeline-chart";
 import { AvailableModels } from "@/components/available-models";
-import { UpcomingJobs } from "@/components/upcoming-jobs";
-import type { ServerState, ModelEvent, ConflictGroup } from "@/lib/types";
+import type { ServerState, ModelEvent } from "@/lib/types";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
@@ -26,12 +25,6 @@ export default function Dashboard() {
     fetcher,
     { refreshInterval: 10000 }
   );
-
-  const { data: scheduledTimeline } = useSWR<{
-    conflicts: ConflictGroup[];
-  }>("/api/scheduled-jobs/timeline?hours=24", fetcher, {
-    refreshInterval: 30000,
-  });
 
   // Track time since last data update
   const lastUpdated = useRef<number>(Date.now());
@@ -53,7 +46,7 @@ export default function Dashboard() {
     servers?.reduce((sum, s) => sum + s.loadedModels.length, 0) ?? 0;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
+    <div className="max-w-[1440px] mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -72,12 +65,6 @@ export default function Dashboard() {
               Updated {secondsAgo < 2 ? "just now" : `${secondsAgo}s ago`}
             </span>
           )}
-          <Link
-            href="/schedule"
-            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
-          >
-            Schedule
-          </Link>
           <Link
             href="/history"
             className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
@@ -111,15 +98,6 @@ export default function Dashboard() {
           <section className="mb-6">
             <FleetSummary servers={servers} />
           </section>
-
-          {/* Model conflicts alert */}
-          {scheduledTimeline?.conflicts && scheduledTimeline.conflicts.length > 0 && (
-            <section className="mb-6">
-              <UpcomingJobs
-                conflicts={scheduledTimeline.conflicts}
-              />
-            </section>
-          )}
 
           {/* Available models across fleet */}
           <section className="mb-6">

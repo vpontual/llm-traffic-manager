@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { ServerState } from "@/lib/types";
 import { VramBar } from "./vram-bar";
 
@@ -47,34 +48,6 @@ function recentRebootCount(boots: string[]): number {
   return boots.filter((b) => new Date(b).getTime() > oneDayAgo).length;
 }
 
-function utilColor(pct: number): string {
-  if (pct >= 90) return "bg-danger";
-  if (pct >= 70) return "bg-warning";
-  return "bg-accent";
-}
-
-function UtilBar({ label, percent, temp }: { label: string; percent: number | null | undefined; temp: number | null | undefined }) {
-  const pct = percent ?? 0;
-  const hasData = percent != null;
-  return (
-    <div>
-      <div className="flex justify-between text-xs mb-0.5">
-        <span className="text-text-secondary">{label}</span>
-        <span className="text-text-muted">
-          {hasData ? `${pct}%` : "—"}
-          {temp != null && <span className={`ml-2 ${tempColor(temp)}`}>{temp}°C</span>}
-        </span>
-      </div>
-      <div className="h-1.5 rounded-full bg-surface-base overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${hasData ? utilColor(pct) : "bg-surface-base"}`}
-          style={{ width: `${hasData ? pct : 0}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 export function ServerCard({
   server,
   latestVersion,
@@ -82,6 +55,7 @@ export function ServerCard({
   server: ServerState;
   latestVersion: string | null;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const modelCount = server.loadedModels.length;
   const isOutdated =
     latestVersion &&
@@ -89,151 +63,182 @@ export function ServerCard({
     server.ollamaVersion !== latestVersion;
 
   return (
-    <div className="bg-surface-raised border border-border rounded-xl p-5">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h2 className="text-lg font-semibold text-text-primary">
-            {server.name}
-          </h2>
-          <p className="text-sm text-text-muted font-mono">{server.host}</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div
+      className="bg-surface-raised border border-border rounded-xl p-4 cursor-pointer transition-all duration-200 hover:border-accent/50"
+      onClick={() => setExpanded(!expanded)}
+    >
+      {/* Header — always visible */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 min-w-0">
           <span
-            className={`inline-block w-2.5 h-2.5 rounded-full ${
+            className={`inline-block w-2 h-2 rounded-full shrink-0 ${
               server.isOnline ? "bg-success" : "bg-danger"
             }`}
           />
-          <span
-            className={`text-sm font-medium ${
-              server.isOnline ? "text-success" : "text-danger"
-            }`}
-          >
-            {server.isOnline ? "Online" : "Offline"}
-          </span>
+          <h2 className="text-sm font-semibold text-text-primary truncate">
+            {server.name}
+          </h2>
         </div>
+        <svg
+          className={`w-4 h-4 text-text-muted shrink-0 transition-transform duration-200 ${
+            expanded ? "rotate-180" : ""
+          }`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
       </div>
 
-      {/* Info row */}
-      <div className="flex gap-4 text-sm text-text-secondary mb-4">
-        <span>RAM: {server.totalRamGb} GB</span>
-        {server.ollamaVersion && (
-          <span className={isOutdated ? "text-warning" : ""}>
-            v{server.ollamaVersion}
-            {isOutdated && " (outdated)"}
-          </span>
-        )}
-      </div>
-
-      {/* VRAM bar */}
-      <div className="mb-4">
+      {/* VRAM bar — always visible */}
+      <div className="mb-3">
         <VramBar used={server.totalVramUsed} totalGb={server.totalRamGb} />
       </div>
 
-      {/* System metrics */}
-      {server.systemMetrics && (
-        <div className="mb-4">
-          <p className="text-xs text-text-muted uppercase tracking-wide mb-2">
-            System
-          </p>
-          {/* CPU & GPU utilization bars */}
-          <div className="space-y-2 mb-3">
-            <UtilBar label="CPU" percent={server.systemMetrics.cpuPercent} temp={server.systemMetrics.cpuTempC} />
-            <UtilBar label="GPU" percent={server.systemMetrics.gpuPercent} temp={server.systemMetrics.gpuTempC} />
-          </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-            {/* Memory */}
-            <div className="flex justify-between">
-              <span className="text-text-secondary">RAM</span>
-              <span className="text-text-primary">
-                {(server.systemMetrics.memUsedMb / 1024).toFixed(1)} /{" "}
-                {(server.systemMetrics.memTotalMb / 1024).toFixed(0)} GB
-              </span>
-            </div>
-            {/* Disk */}
-            <div className="flex justify-between">
-              <span className="text-text-secondary">Disk</span>
-              <span className="text-text-primary">
-                {server.systemMetrics.diskUsedGb} /{" "}
-                {server.systemMetrics.diskTotalGb} GB
-              </span>
-            </div>
-            {/* Uptime */}
-            <div className="flex justify-between">
-              <span className="text-text-secondary">Uptime</span>
-              <span className="text-text-primary">
-                {formatUptimeSeconds(server.systemMetrics.uptimeSeconds)}
-              </span>
-            </div>
-            {/* Load */}
-            <div className="flex justify-between">
-              <span className="text-text-secondary">Load</span>
-              <span className="text-text-primary">
-                {server.systemMetrics.loadAvg[0].toFixed(2)}
-              </span>
+      {/* Loaded models summary — always visible */}
+      <div className="mb-1">
+        {modelCount === 0 ? (
+          <p className="text-xs text-text-muted italic">No models loaded</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {server.loadedModels.map((model) => (
+              <li key={model.name} className="flex items-center gap-1.5 text-xs">
+                {isPinned(model.expires_at) && (
+                  <span className="text-accent" title="Pinned">&bull;</span>
+                )}
+                <span className="text-text-primary font-mono truncate">
+                  {model.name}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Expanded details */}
+      <div
+        className={`grid transition-all duration-200 ease-in-out ${
+          expanded ? "grid-rows-[1fr] opacity-100 mt-3" : "grid-rows-[0fr] opacity-0"
+        }`}
+      >
+        <div className="overflow-hidden">
+          {/* Host + version info */}
+          <div className="border-t border-border pt-3 mb-3">
+            <p className="text-xs text-text-muted font-mono mb-1">{server.host}</p>
+            <div className="flex gap-3 text-xs text-text-secondary">
+              <span>RAM: {server.totalRamGb} GB</span>
+              {server.ollamaVersion && (
+                <span className={isOutdated ? "text-warning" : ""}>
+                  v{server.ollamaVersion}
+                  {isOutdated && " (outdated)"}
+                </span>
+              )}
             </div>
           </div>
-          {/* Swap if used */}
-          {server.systemMetrics.swapUsedMb > 0 && (
-            <div className="flex justify-between text-sm mt-1.5">
-              <span className="text-text-secondary">Swap</span>
-              <span className="text-warning">
-                {(server.systemMetrics.swapUsedMb / 1024).toFixed(1)} /{" "}
-                {(server.systemMetrics.swapTotalMb / 1024).toFixed(0)} GB
-              </span>
+
+          {/* System metrics */}
+          {server.systemMetrics && (
+            <div className="mb-3">
+              <p className="text-xs text-text-muted uppercase tracking-wide mb-2">
+                System
+              </p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">CPU</span>
+                  <span className={tempColor(server.systemMetrics.cpuTempC)}>
+                    {server.systemMetrics.cpuTempC != null
+                      ? `${server.systemMetrics.cpuTempC}°C`
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">GPU</span>
+                  <span className={tempColor(server.systemMetrics.gpuTempC)}>
+                    {server.systemMetrics.gpuTempC != null
+                      ? `${server.systemMetrics.gpuTempC}°C`
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">RAM</span>
+                  <span className="text-text-primary">
+                    {(server.systemMetrics.memUsedMb / 1024).toFixed(1)} /{" "}
+                    {(server.systemMetrics.memTotalMb / 1024).toFixed(0)} GB
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Disk</span>
+                  <span className="text-text-primary">
+                    {server.systemMetrics.diskUsedGb} /{" "}
+                    {server.systemMetrics.diskTotalGb} GB
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Uptime</span>
+                  <span className="text-text-primary">
+                    {formatUptimeSeconds(server.systemMetrics.uptimeSeconds)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Load</span>
+                  <span className="text-text-primary">
+                    {server.systemMetrics.loadAvg[0].toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              {server.systemMetrics.swapUsedMb > 0 && (
+                <div className="flex justify-between text-xs mt-1">
+                  <span className="text-text-secondary">Swap</span>
+                  <span className="text-warning">
+                    {(server.systemMetrics.swapUsedMb / 1024).toFixed(1)} /{" "}
+                    {(server.systemMetrics.swapTotalMb / 1024).toFixed(0)} GB
+                  </span>
+                </div>
+              )}
+              {recentRebootCount(server.systemMetrics.recentBoots) > 1 && (
+                <div className="mt-2 px-2 py-1 bg-danger/10 border border-danger/20 rounded-lg text-xs text-danger">
+                  {recentRebootCount(server.systemMetrics.recentBoots)} reboots in
+                  last 24h
+                </div>
+              )}
             </div>
           )}
-          {/* Reboot warning */}
-          {recentRebootCount(server.systemMetrics.recentBoots) > 1 && (
-            <div className="mt-2 px-2.5 py-1.5 bg-danger/10 border border-danger/20 rounded-lg text-xs text-danger">
-              {recentRebootCount(server.systemMetrics.recentBoots)} reboots in
-              last 24h
+
+          {/* Full model details */}
+          {modelCount > 0 && (
+            <div>
+              <p className="text-xs text-text-muted uppercase tracking-wide mb-2">
+                Model Details
+              </p>
+              <ul className="space-y-1">
+                {server.loadedModels.map((model) => {
+                  const loadedAt = server.modelLoadTimes?.[model.name];
+                  return (
+                    <li
+                      key={model.name}
+                      className="flex items-center justify-between text-xs"
+                    >
+                      <span className="text-text-primary font-mono truncate mr-2">
+                        {model.name}
+                      </span>
+                      <span className="text-text-muted whitespace-nowrap">
+                        {loadedAt && (
+                          <span className="mr-1.5">{formatUptime(loadedAt)}</span>
+                        )}
+                        {model.details?.parameter_size ?? ""}
+                        {model.details?.quantization_level
+                          ? ` ${model.details.quantization_level}`
+                          : ""}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
         </div>
-      )}
-
-      {/* Loaded models list */}
-      <div>
-        <p className="text-xs text-text-muted uppercase tracking-wide mb-2">
-          Loaded Models ({modelCount})
-        </p>
-        {modelCount === 0 ? (
-          <p className="text-sm text-text-muted italic">No models loaded</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {server.loadedModels.map((model) => {
-              const loadedAt = server.modelLoadTimes?.[model.name];
-              const pinned = isPinned(model.expires_at);
-              return (
-                <li
-                  key={model.name}
-                  className="flex items-center justify-between text-sm"
-                >
-                  <span className="text-text-primary font-mono truncate mr-2">
-                    {pinned && (
-                      <span className="text-accent mr-1.5" title="Pinned (never expires)">
-                        &bull;
-                      </span>
-                    )}
-                    {model.name}
-                  </span>
-                  <span className="text-text-muted text-xs whitespace-nowrap">
-                    {loadedAt && (
-                      <span className="text-text-muted mr-2">
-                        {formatUptime(loadedAt)}
-                      </span>
-                    )}
-                    {model.details?.parameter_size ?? ""}
-                    {model.details?.quantization_level
-                      ? ` ${model.details.quantization_level}`
-                      : ""}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
       </div>
     </div>
   );

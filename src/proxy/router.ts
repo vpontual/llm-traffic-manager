@@ -19,6 +19,9 @@ let cachedStates: ServerSnapshot[] = [];
 let lastRefresh = 0;
 const CACHE_TTL_MS = 3000; // 3 seconds
 
+// Round-robin counter for tiebreaking among equal-priority servers (e.g. Nanos)
+let roundRobinCounter = 0;
+
 // Track which server last handled each model (for anti-churn routing)
 const lastRoutedServer = new Map<string, number>();
 
@@ -81,10 +84,14 @@ function freeVram(s: ServerSnapshot): number {
   return s.totalRamGb * 1024 * 1024 * 1024 - s.totalVramUsed;
 }
 
-/** Pick server with most free VRAM */
-function pickByVram(candidates: ServerSnapshot[]): ServerSnapshot {
-  candidates.sort((a, b) => freeVram(b) - freeVram(a));
-  return candidates[0];
+/** Pick server by priority: highest RAM tier first, round-robin among ties */
+function pickByPriority(candidates: ServerSnapshot[]): ServerSnapshot {
+  candidates.sort((a, b) => b.totalRamGb - a.totalRamGb);
+  const topRam = candidates[0].totalRamGb;
+  const tied = candidates.filter((s) => s.totalRamGb === topRam);
+  const pick = tied[roundRobinCounter % tied.length];
+  roundRobinCounter++;
+  return pick;
 }
 
 export interface RouteDecision {
@@ -127,7 +134,7 @@ export async function routeModel(modelName: string): Promise<RouteDecision | nul
   );
 
   if (withModelLoaded.length > 0) {
-    const best = pickByVram(withModelLoaded);
+    const best = pickByPriority(withModelLoaded);
     lastRoutedServer.set(modelName, best.id);
     // Refresh optimistic timestamp — stays valid while model is actively used
     optimisticLoads.set(modelName, { serverId: best.id, timestamp: Date.now() });
@@ -158,7 +165,7 @@ export async function routeModel(modelName: string): Promise<RouteDecision | nul
       }
     }
 
-    const best = pickByVram(candidates);
+    const best = pickByPriority(candidates);
     lastRoutedServer.set(modelName, best.id);
     // Mark as optimistically loaded so the next request routes here too
     optimisticLoads.set(modelName, { serverId: best.id, timestamp: Date.now() });
@@ -173,7 +180,7 @@ export async function routeModel(modelName: string): Promise<RouteDecision | nul
   }
 
   // 3. Fall back to server with most free VRAM
-  const best = pickByVram(onlineServers);
+  const best = pickByPriority(onlineServers);
   lastRoutedServer.set(modelName, best.id);
   optimisticLoads.set(modelName, { serverId: best.id, timestamp: Date.now() });
   return {

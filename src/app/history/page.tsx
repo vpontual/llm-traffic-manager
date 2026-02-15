@@ -4,7 +4,6 @@ import useSWR from "swr";
 import type { ModelEvent } from "@/lib/types";
 import { useState } from "react";
 import Link from "next/link";
-import { ModelRecommendations, type RecommendationsResponse } from "@/components/model-recommendations";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -88,12 +87,6 @@ export default function HistoryPage() {
     { refreshInterval: 15000 }
   );
 
-  const { data: recommendations } = useSWR<RecommendationsResponse>(
-    `/api/recommendations?hours=${hours}`,
-    fetcher,
-    { refreshInterval: 60000 }
-  );
-
   // Group usage by server
   const serverGroups = new Map<string, UsageRecord[]>();
   for (const record of usage ?? []) {
@@ -103,7 +96,7 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
+    <div className="max-w-[1440px] mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -136,18 +129,6 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {/* Model Recommendations */}
-      {recommendations &&
-        (recommendations.considerRemoving.length > 0 ||
-          recommendations.considerAdding.length > 0) && (
-          <section className="mb-8">
-            <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
-              Model Recommendations
-            </h2>
-            <ModelRecommendations data={recommendations} />
-          </section>
-        )}
-
       {/* Usage Summary Per Server */}
       <section className="mb-8">
         <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
@@ -158,7 +139,7 @@ export default function HistoryPage() {
             No usage data in this time range
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {[...serverGroups.entries()].map(([serverName, records]) => (
               <div
                 key={serverName}
@@ -210,7 +191,7 @@ export default function HistoryPage() {
       {/* Request Log Summary (from proxy) */}
       <section className="mb-8">
         <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
-          Proxy Requests by Source
+          Proxy Requests by Source IP
         </h2>
         {!requestsData?.summary || requestsData.summary.length === 0 ? (
           <div className="bg-surface-raised border border-border rounded-xl p-6 text-center text-text-muted">
@@ -221,7 +202,7 @@ export default function HistoryPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-xs text-text-muted uppercase tracking-wide">
-                  <th className="text-left p-3 pl-4">Source</th>
+                  <th className="text-left p-3 pl-4">Source IP</th>
                   <th className="text-left p-3">Model</th>
                   <th className="text-left p-3">Routed To</th>
                   <th className="text-right p-3">Requests</th>
