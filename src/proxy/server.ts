@@ -8,6 +8,7 @@ import {
 import { db } from "../lib/db";
 import { requestLogs, users } from "../lib/schema";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { readJsonEnv } from "../lib/env";
 
 const PROXY_PORT = 11434;
 
@@ -59,10 +60,9 @@ async function refreshApiKeyCache() {
  * Parse SOURCE_NAMES env var: JSON object mapping IP -> friendly name.
  */
 function loadSourceNames(): Map<string, string> {
-  const raw = process.env.SOURCE_NAMES;
-  if (!raw) return new Map();
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = readJsonEnv<Record<string, string>>("SOURCE_NAMES");
+    if (!parsed) return new Map();
     return new Map(Object.entries(parsed));
   } catch {
     console.warn("Failed to parse SOURCE_NAMES env var, ignoring");

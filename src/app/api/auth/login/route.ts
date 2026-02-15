@@ -4,6 +4,7 @@ import { users } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { verifyPassword, createSession, SESSION_COOKIE } from "@/lib/auth";
 import { validateLoginInput } from "@/lib/validations/auth";
+import { isProduction } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest) {
   response.cookies.set(SESSION_COOKIE, sessionId, {
     httpOnly: true,
     sameSite: "lax",
+    secure: isProduction(),
     path: "/",
     maxAge: 7 * 24 * 60 * 60,
   });

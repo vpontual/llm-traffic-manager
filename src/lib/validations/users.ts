@@ -8,7 +8,7 @@ export interface UserUpdateInput {
 
 const userUpdateSchema = z
   .object({
-    password: z.string().min(4).optional(),
+    password: z.string().min(10).optional(),
     isAdmin: z.boolean().optional(),
   })
   .passthrough();

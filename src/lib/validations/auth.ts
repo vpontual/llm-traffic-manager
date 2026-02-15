@@ -5,10 +5,10 @@ import {
 } from "./common";
 import { z } from "zod";
 
-const MIN_PASSWORD_LENGTH = 4;
+const MIN_PASSWORD_LENGTH = 10;
 
 export const USERNAME_PASSWORD_MIN_LENGTH_ERROR =
-  "Username required, password must be at least 4 characters";
+  `Username required, password must be at least ${MIN_PASSWORD_LENGTH} characters`;
 
 export interface CredentialsInput {
   username: string;

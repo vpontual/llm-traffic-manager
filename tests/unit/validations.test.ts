@@ -40,14 +40,14 @@ test("validateSetupInput enforces password min length", () => {
 
   assert.equal(result.ok, false);
   if (!result.ok) {
-    assert.match(result.error, /at least 4 characters/);
+    assert.match(result.error, /at least 10 characters/);
   }
 });
 
 test("validateNewUserInput defaults isAdmin to false", () => {
   const result = validateNewUserInput({
     username: "new-user",
-    password: "abcd",
+    password: "averystrongpassword",
   });
 
   assert.equal(result.ok, true);
@@ -138,7 +138,7 @@ test("validateUserUpdateInput validates payload shape", () => {
   assert.equal(invalid.ok, false);
 
   const valid = validateUserUpdateInput({
-    password: "1234",
+    password: "1234567890",
     isAdmin: true,
   });
   assert.equal(valid.ok, true);

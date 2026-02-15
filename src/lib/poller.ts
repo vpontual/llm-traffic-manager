@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import type { ServerConfig, OllamaRunningModel } from "./types";
 import { checkServerAlerts } from "./alerts";
 import { notifySubscribedUsers } from "./user-notifications";
+import { readJsonEnv, readPositiveIntEnv } from "./env";
 
 // In-memory state for diffing loaded models between polls
 const previousModels = new Map<number, Set<string>>();
@@ -19,17 +20,17 @@ const previousBootSet = new Map<number, Set<string>>();
 const serverConfigMap = new Map<string, ServerConfig>();
 
 function getServerConfigs(): ServerConfig[] {
-  const raw = process.env.OLLAMA_SERVERS;
-  if (!raw) {
+  const parsed = readJsonEnv<ServerConfig[]>("OLLAMA_SERVERS");
+  if (!parsed) {
     console.error("OLLAMA_SERVERS env var not set");
     return [];
   }
-  try {
-    return JSON.parse(raw);
-  } catch {
-    console.error("Failed to parse OLLAMA_SERVERS:", raw);
+  if (!Array.isArray(parsed)) {
+    console.error("OLLAMA_SERVERS env var must be a JSON array");
     return [];
   }
+
+  return parsed;
 }
 
 async function ensureServersSeeded(configs: ServerConfig[]) {
@@ -291,7 +292,12 @@ export async function startPoller() {
   await pollAllServers();
 
   // Poll on interval
-  const intervalSec = parseInt(process.env.POLL_INTERVAL ?? "10", 10);
+  let intervalSec = 10;
+  try {
+    intervalSec = readPositiveIntEnv("POLL_INTERVAL", 10);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : "Invalid POLL_INTERVAL");
+  }
   pollInterval = setInterval(pollAllServers, intervalSec * 1000);
   console.log(`Polling every ${intervalSec}s`);
 

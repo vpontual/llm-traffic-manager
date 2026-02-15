@@ -89,15 +89,20 @@ OLLAMA_SERVERS='[
   {"name": "GPU Server 2", "host": "192.168.1.101:11434", "ramGb": 24}
 ]'
 
-# PostgreSQL connection string
-DATABASE_URL=postgresql://ollama_fleet:password@db:5432/ollama_fleet
+# PostgreSQL connection settings for docker-compose
+POSTGRES_USER=ollama_fleet
+POSTGRES_PASSWORD=replace-with-strong-postgres-password
+POSTGRES_DB=ollama_fleet
+
+# PostgreSQL connection string used by the app (must match values above)
+DATABASE_URL=postgresql://ollama_fleet:replace-with-strong-postgres-password@db:5432/ollama_fleet
 
 # Polling interval in seconds (default: 10)
 POLL_INTERVAL=10
 
 # Admin credentials (seeds first user on initial setup)
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=changeme
+ADMIN_PASSWORD=replace-with-strong-admin-password
 
 # Telegram notifications (optional)
 TELEGRAM_BOT_TOKEN=

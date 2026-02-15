@@ -4,6 +4,7 @@ import { sessions } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE } from "@/lib/auth";
+import { isProduction } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,12 @@ export async function POST() {
   }
 
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(SESSION_COOKIE, "", { maxAge: 0, path: "/" });
+  response.cookies.set(SESSION_COOKIE, "", {
+    maxAge: 0,
+    path: "/",
+    secure: isProduction(),
+    sameSite: "lax",
+    httpOnly: true,
+  });
   return response;
 }

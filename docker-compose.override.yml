@@ -7,7 +7,7 @@ services:
       - "43334:3000"
       - "41434:11434"
     environment:
-      - DATABASE_URL=postgresql://ollama_fleet:password@db-dev:5432/ollama_fleet
+      - DATABASE_URL=${DATABASE_URL_DEV:-postgresql://ollama_fleet:smoke-password@db-dev:5432/ollama_fleet}
       - OLLAMA_SERVERS=[{"name":"Local Ollama","host":"host.docker.internal:11434","ramGb":16}]
       - POLL_INTERVAL=${POLL_INTERVAL_DEV:-10}
       - TELEGRAM_BOT_TOKEN=
@@ -35,9 +35,9 @@ services:
       - dev
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: ollama_fleet
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: ollama_fleet
+      POSTGRES_USER: ${POSTGRES_USER_DEV:-ollama_fleet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_DEV:-smoke-password}
+      POSTGRES_DB: ${POSTGRES_DB_DEV:-ollama_fleet}
     volumes:
       - pgdata_dev:/var/lib/postgresql/data
     ports:

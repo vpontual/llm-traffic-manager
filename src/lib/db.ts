@@ -1,8 +1,9 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
+import { requireEnv } from "./env";
 
-const connectionString = process.env.DATABASE_URL!;
+const connectionString = requireEnv("DATABASE_URL");
 
 // Singleton pattern for connection in dev (avoid hot-reload leaks)
 const globalForDb = globalThis as unknown as {
