@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import type { ServerState } from "@/lib/types";
 import { VramBar } from "./vram-bar";
 
@@ -51,11 +50,12 @@ function recentRebootCount(boots: string[]): number {
 export function ServerCard({
   server,
   latestVersion,
+  expanded,
 }: {
   server: ServerState;
   latestVersion: string | null;
+  expanded: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const modelCount = server.loadedModels.length;
   const isOutdated =
     latestVersion &&
@@ -63,10 +63,7 @@ export function ServerCard({
     server.ollamaVersion !== latestVersion;
 
   return (
-    <div
-      className="bg-surface-raised border border-border rounded-xl p-4 cursor-pointer transition-all duration-200 hover:border-accent/50"
-      onClick={() => setExpanded(!expanded)}
-    >
+    <div className="bg-surface-raised border border-border rounded-xl p-4 transition-all duration-200">
       {/* Header — always visible */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 min-w-0">
@@ -79,17 +76,6 @@ export function ServerCard({
             {server.name}
           </h2>
         </div>
-        <svg
-          className={`w-4 h-4 text-text-muted shrink-0 transition-transform duration-200 ${
-            expanded ? "rotate-180" : ""
-          }`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
       </div>
 
       {/* VRAM bar — always visible */}
@@ -98,7 +84,7 @@ export function ServerCard({
       </div>
 
       {/* Loaded models summary — always visible */}
-      <div className="mb-1">
+      <div className={expanded ? "mb-1" : ""}>
         {modelCount === 0 ? (
           <p className="text-xs text-text-muted italic">No models loaded</p>
         ) : (
@@ -149,7 +135,7 @@ export function ServerCard({
                   <span className="text-text-secondary">CPU</span>
                   <span className={tempColor(server.systemMetrics.cpuTempC)}>
                     {server.systemMetrics.cpuTempC != null
-                      ? `${server.systemMetrics.cpuTempC}°C`
+                      ? `${server.systemMetrics.cpuTempC}\°C`
                       : "—"}
                   </span>
                 </div>
@@ -157,7 +143,7 @@ export function ServerCard({
                   <span className="text-text-secondary">GPU</span>
                   <span className={tempColor(server.systemMetrics.gpuTempC)}>
                     {server.systemMetrics.gpuTempC != null
-                      ? `${server.systemMetrics.gpuTempC}°C`
+                      ? `${server.systemMetrics.gpuTempC}\°C`
                       : "—"}
                   </span>
                 </div>
