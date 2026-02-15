@@ -4,6 +4,7 @@ const baseUrl = (process.env.BASE_URL || "http://localhost:3334").replace(/\/$/,
 const proxyUrl = (process.env.PROXY_URL || "http://localhost:11434").replace(/\/$/, "");
 const smokeUsername = process.env.SMOKE_USERNAME || process.env.ADMIN_USERNAME || "smoke-admin";
 const smokePassword = process.env.SMOKE_PASSWORD || process.env.ADMIN_PASSWORD || "smoke-password";
+const usingDefaultCreds = !process.env.SMOKE_USERNAME && !process.env.ADMIN_USERNAME;
 
 function ensureOk(path, res) {
   if (!res.ok) {
@@ -83,6 +84,9 @@ async function acquireSession(needsSetup) {
 async function run() {
   console.log(`Smoke base URL: ${baseUrl}`);
   console.log(`Proxy URL: ${proxyUrl}`);
+  if (usingDefaultCreds) {
+    console.warn("⚠ Using default smoke credentials. Set SMOKE_USERNAME/SMOKE_PASSWORD for shared or real environments.");
+  }
 
   await waitForApp();
   console.log("✔ app is reachable");

@@ -163,6 +163,22 @@ npm test
 
 # Smoke test against running Docker stack
 npm run smoke:docker
+
+# Start isolated dev-profile stack, run smoke, then auto-teardown
+npm run smoke:docker:dev
+
+# Backward-compatible alias for smoke:docker:dev
+npm run smoke:docker:stack
+```
+
+`smoke:docker:dev` uses `docker-compose.override.yml` + `--profile dev` with a
+separate project (`ollamaproxy-smoke`) and alternate host ports to avoid
+touching a production stack.
+
+For shared or real environments, set explicit credentials before running smoke:
+
+```bash
+SMOKE_USERNAME=your-user SMOKE_PASSWORD='your-secret' npm run smoke
 ```
 
 Pre-commit hooks run `npm run check` automatically. See [`TESTING.md`](./TESTING.md) for full details.

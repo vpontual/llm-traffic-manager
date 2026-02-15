@@ -79,10 +79,21 @@ Run against Docker-exposed ports:
 npm run smoke:docker
 ```
 
-Build/start the stack and run smoke in one command:
+Start an isolated dev-profile Docker stack, run smoke, and tear it down:
 
 ```bash
-npm run smoke:docker:stack
+npm run smoke:docker:dev
+```
+
+`smoke:docker:stack` remains as an alias to `smoke:docker:dev`.
+
+### Smoke Credentials
+
+Defaults (`smoke-admin` / `smoke-password`) are intended for local/CI use.
+For shared or real environments, always set explicit credentials:
+
+```bash
+SMOKE_USERNAME=your-user SMOKE_PASSWORD='your-secret' npm run smoke
 ```
 
 ## Docker-Only Validation
