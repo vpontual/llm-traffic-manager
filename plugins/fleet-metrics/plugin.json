@@ -1,0 +1,9 @@
+{
+  "name": "fleet-metrics",
+  "version": "1.0.0",
+  "description": "System metrics agent for CPU/GPU temp, memory, disk, and uptime",
+  "type": "agent",
+  "defaultPort": 9100,
+  "endpoint": "/metrics",
+  "configKey": "metricsPort"
+}

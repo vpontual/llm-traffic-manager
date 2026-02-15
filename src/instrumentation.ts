@@ -57,6 +57,11 @@ export async function register() {
     }
   }
 
+  // Load plugins before starting poller
+  const { loadPlugins } = await import("./lib/plugins");
+  const plugins = loadPlugins();
+  console.log(`[Plugins] ${plugins.length} plugin(s) loaded`);
+
   const { startPoller } = await import("./lib/poller");
   await startPoller();
 

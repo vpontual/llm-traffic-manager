@@ -24,6 +24,7 @@ Built for anyone running multiple Ollama instances across different machines who
 - **Auto-Discovery** — Discover cron jobs from Docker containers via environment variables
 - **Multi-User Auth** — Cookie-based sessions with per-user Telegram notification preferences
 - **Telegram Alerts** — Server offline/online, overheating, low memory, and reboot notifications
+- **Plugin System** — Extensible architecture for community plugins (see [PLUGINS.md](PLUGINS.md))
 - **OpenAI API Compatible** — Supports `/v1/*` endpoints
 
 ## Architecture
@@ -110,6 +111,14 @@ SOURCE_NAMES='{"172.28.0.1": "my-app"}'
 
 To display CPU/GPU temperature, memory, and disk metrics, install the lightweight metrics agent on each Ollama server. See the [fleet-metrics plugin](plugins/fleet-metrics/) for setup instructions.
 
+## Plugins
+
+Ollama Fleet Manager supports a plugin architecture for extending functionality. Plugins are loaded at startup from the `plugins/` directory.
+
+**fleet-metrics** is the first official plugin — a lightweight Python agent that collects system metrics (CPU/GPU temperature, memory, disk, uptime) from each server in your fleet.
+
+See [PLUGINS.md](PLUGINS.md) for the full plugin guide, including how to create your own.
+
 ## Ports
 
 | Port | Service |
@@ -126,6 +135,7 @@ To display CPU/GPU temperature, memory, and disk metrics, install the lightweigh
 - `GET /api/events?hours=24` — Model load/unload events
 - `GET /api/requests?hours=24` — Proxy request logs
 - `GET /api/usage?hours=168` — Model usage statistics
+- `GET /api/plugins` — List installed plugins
 - `POST /api/poll` — Trigger manual polling
 
 ### Scheduled Jobs API

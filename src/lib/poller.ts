@@ -2,6 +2,7 @@ import { db } from "./db";
 import { servers, serverSnapshots, modelEvents, systemMetrics, serverEvents } from "./schema";
 import { pollServer } from "./ollama";
 import { fetchSystemMetrics } from "./metrics";
+import { getAgentPlugins } from "./plugins";
 import { eq } from "drizzle-orm";
 import type { ServerConfig, OllamaRunningModel } from "./types";
 import { checkServerAlerts } from "./alerts";
@@ -13,6 +14,9 @@ const previousModels = new Map<number, Set<string>>();
 // In-memory state for detecting server lifecycle transitions
 const previousOnline = new Map<number, boolean>();
 const previousBootSet = new Map<number, Set<string>>();
+
+// Config lookup by host for per-server settings (e.g. metricsPort)
+const serverConfigMap = new Map<string, ServerConfig>();
 
 function getServerConfigs(): ServerConfig[] {
   const raw = process.env.OLLAMA_SERVERS;
@@ -47,17 +51,41 @@ async function ensureServersSeeded(configs: ServerConfig[]) {
   }
 }
 
+/** Resolve the metrics agent host:port for a server, or null to skip. */
+function getMetricsHost(serverHost: string): string | null {
+  const config = serverConfigMap.get(serverHost);
+
+  // Explicitly disabled: metricsPort is 0 or null
+  if (config?.metricsPort === 0 || config?.metricsPort === null) {
+    return null;
+  }
+
+  const ip = serverHost.split(":")[0];
+
+  // Use per-server override if set
+  if (config?.metricsPort) {
+    return `${ip}:${config.metricsPort}`;
+  }
+
+  // Fall back to fleet-metrics plugin defaultPort
+  const metricsPlugin = getAgentPlugins().find((p) => p.configKey === "metricsPort");
+  const defaultPort = metricsPlugin?.defaultPort ?? 9100;
+  return `${ip}:${defaultPort}`;
+}
+
 async function pollAllServers() {
   const allServers = await db.select().from(servers);
 
   await Promise.all(
     allServers.map(async (server) => {
       try {
+        // Resolve metrics host (null = skip metrics for this server)
+        const metricsHost = getMetricsHost(server.host);
+
         // Fetch Ollama data and system metrics in parallel
-        const metricsHost = server.host.split(":")[0] + ":9100";
         const [result, sysMetrics] = await Promise.all([
           pollServer(server.host),
-          fetchSystemMetrics(metricsHost),
+          metricsHost ? fetchSystemMetrics(metricsHost) : Promise.resolve(null),
         ]);
 
         // Record snapshot
@@ -249,6 +277,11 @@ export async function startPoller() {
   if (configs.length === 0) {
     console.error("No servers configured, poller not starting");
     return;
+  }
+
+  // Build config lookup for per-server settings (e.g. metricsPort)
+  for (const config of configs) {
+    serverConfigMap.set(config.host, config);
   }
 
   console.log(`Starting poller for ${configs.length} servers...`);

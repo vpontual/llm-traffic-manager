@@ -46,6 +46,7 @@ export interface ServerConfig {
   name: string;
   host: string;
   ramGb: number;
+  metricsPort?: number | null;
 }
 
 // System metrics from fleet metrics agent
