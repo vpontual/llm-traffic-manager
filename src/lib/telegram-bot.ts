@@ -1,7 +1,7 @@
 import { db } from "./db";
-import { servers, serverSnapshots, systemMetrics, serverEvents } from "./schema";
+import { servers, serverSnapshots, systemMetrics, serverEvents, userTelegramConfigs } from "./schema";
 import { eq, desc, and } from "drizzle-orm";
-import { getTelegramConfig, isTelegramConfigured, sendTelegramReply } from "./telegram";
+import { getTelegramConfig, isTelegramConfigured } from "./telegram";
 
 interface TelegramUpdate {
   update_id: number;
@@ -11,8 +11,6 @@ interface TelegramUpdate {
     text?: string;
   };
 }
-
-let lastUpdateId = 0;
 
 function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86400);
@@ -34,12 +32,32 @@ function timeAgo(iso: string): string {
   return `${days}d ago`;
 }
 
-async function handleStatus(chatId: number): Promise<void> {
+async function sendReply(botToken: string, chatId: number, text: string): Promise<void> {
+  try {
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
+    });
+    if (!res.ok) {
+      console.error(`[TelegramBot] Reply failed: ${res.status} ${res.statusText}`);
+    }
+  } catch (err) {
+    console.error("[TelegramBot] Reply error:", err);
+  }
+}
+
+async function handleStatus(botToken: string, chatId: number): Promise<void> {
   const allServers = await db.select().from(servers);
   const lines: string[] = ["<b>Fleet Status</b>\n"];
 
   for (const server of allServers) {
-    // Get latest snapshot
     const [snap] = await db
       .select()
       .from(serverSnapshots)
@@ -47,7 +65,6 @@ async function handleStatus(chatId: number): Promise<void> {
       .orderBy(desc(serverSnapshots.polledAt))
       .limit(1);
 
-    // Get latest metrics
     const [metrics] = await db
       .select()
       .from(systemMetrics)
@@ -65,7 +82,6 @@ async function handleStatus(chatId: number): Promise<void> {
       ? formatUptime(metrics.uptimeSeconds)
       : "?";
 
-    // Count loaded models
     const models = (snap.loadedModels as Array<{ name: string }>) ?? [];
     const modelInfo =
       models.length > 0
@@ -79,15 +95,14 @@ async function handleStatus(chatId: number): Promise<void> {
     }
   }
 
-  await sendTelegramReply(chatId, lines.join("\n"));
+  await sendReply(botToken, chatId, lines.join("\n"));
 }
 
-async function handleLastReboot(chatId: number): Promise<void> {
+async function handleLastReboot(botToken: string, chatId: number): Promise<void> {
   const allServers = await db.select().from(servers);
   const lines: string[] = ["<b>Recent Reboots</b>\n"];
 
   for (const server of allServers) {
-    // Get latest reboot event
     const [reboot] = await db
       .select()
       .from(serverEvents)
@@ -110,39 +125,52 @@ async function handleLastReboot(chatId: number): Promise<void> {
     lines.push(`<b>${server.name}</b> \u2014 ${ago} \u2014 ${detail}`);
   }
 
-  await sendTelegramReply(chatId, lines.join("\n"));
+  await sendReply(botToken, chatId, lines.join("\n"));
 }
 
-async function processUpdate(update: TelegramUpdate): Promise<void> {
-  const msg = update.message;
-  if (!msg?.text) return;
+async function handleHelp(botToken: string, chatId: number): Promise<void> {
+  const text = [
+    "<b>Available Commands</b>\n",
+    "/status \u2014 Show fleet status: online/offline state, uptime, and loaded models for each server",
+    "/last_reboot \u2014 Show the most recent reboot for each server with timestamp and cause",
+    "/help \u2014 Show this list of commands",
+  ].join("\n");
+  await sendReply(botToken, chatId, text);
+}
 
-  const { chatId } = getTelegramConfig();
-  // Only respond to the configured chat
-  if (String(msg.chat.id) !== chatId) return;
-
-  const text = msg.text.trim().toLowerCase();
-
-  if (text === "/status") {
-    await handleStatus(msg.chat.id);
-  } else if (text === "/last_reboot" || text === "/lastreboot") {
-    await handleLastReboot(msg.chat.id);
+async function processCommand(botToken: string, chatId: number, text: string): Promise<void> {
+  const cmd = text.trim().toLowerCase().split("@")[0];
+  if (cmd === "/status") {
+    await handleStatus(botToken, chatId);
+  } else if (cmd === "/last_reboot" || cmd === "/lastreboot") {
+    await handleLastReboot(botToken, chatId);
+  } else if (cmd === "/help" || cmd === "/start") {
+    await handleHelp(botToken, chatId);
   }
 }
 
-async function pollUpdates(): Promise<void> {
-  const { botToken } = getTelegramConfig();
-  if (!botToken) return;
+// --- Per-bot polling loop management ---
 
+interface BotListener {
+  botToken: string;
+  chatId: string;
+  label: string;
+  lastUpdateId: number;
+  running: boolean;
+}
+
+const activeListeners = new Map<string, BotListener>();
+
+async function pollBotUpdates(listener: BotListener): Promise<void> {
   try {
-    const url = `https://api.telegram.org/bot${botToken}/getUpdates?offset=${lastUpdateId + 1}&timeout=30&allowed_updates=["message"]`;
+    const url = `https://api.telegram.org/bot${listener.botToken}/getUpdates?offset=${listener.lastUpdateId + 1}&timeout=30&allowed_updates=["message"]`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 35000);
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
 
     if (!res.ok) {
-      console.error(`[TelegramBot] getUpdates failed: ${res.status}`);
+      console.error(`[TelegramBot:${listener.label}] getUpdates failed: ${res.status}`);
       return;
     }
 
@@ -150,36 +178,108 @@ async function pollUpdates(): Promise<void> {
     const updates: TelegramUpdate[] = data.result ?? [];
 
     for (const update of updates) {
-      lastUpdateId = Math.max(lastUpdateId, update.update_id);
+      listener.lastUpdateId = Math.max(listener.lastUpdateId, update.update_id);
+      const msg = update.message;
+      if (!msg?.text) continue;
+
+      // Only respond to the configured chat for this bot
+      if (String(msg.chat.id) !== listener.chatId) continue;
+
       try {
-        await processUpdate(update);
+        await processCommand(listener.botToken, msg.chat.id, msg.text);
       } catch (err) {
-        console.error("[TelegramBot] Error processing update:", err);
+        console.error(`[TelegramBot:${listener.label}] Error processing command:`, err);
       }
     }
   } catch (err: unknown) {
-    if (err instanceof Error && err.name === "AbortError") return; // Normal timeout
-    console.error("[TelegramBot] Poll error:", err);
+    if (err instanceof Error && err.name === "AbortError") return;
+    console.error(`[TelegramBot:${listener.label}] Poll error:`, err);
   }
 }
 
-export async function startTelegramBot(): Promise<void> {
-  if (!isTelegramConfigured()) {
-    console.log("[TelegramBot] Not configured, skipping bot startup");
-    return;
-  }
+function startBotLoop(listener: BotListener): void {
+  listener.running = true;
 
-  console.log("[TelegramBot] Starting command listener...");
-
-  // Continuous long-polling loop
   const loop = async () => {
-    while (true) {
-      await pollUpdates();
-      // Small delay between polls to avoid hammering on errors
+    while (listener.running) {
+      await pollBotUpdates(listener);
       await new Promise((r) => setTimeout(r, 1000));
     }
   };
 
-  // Run in background (don't await)
-  loop().catch((err) => console.error("[TelegramBot] Fatal error:", err));
+  loop().catch((err) => {
+    console.error(`[TelegramBot:${listener.label}] Fatal error:`, err);
+    listener.running = false;
+  });
+}
+
+async function syncUserBotListeners(): Promise<void> {
+  try {
+    const configs = await db
+      .select({
+        botToken: userTelegramConfigs.botToken,
+        chatId: userTelegramConfigs.chatId,
+        userId: userTelegramConfigs.userId,
+        isEnabled: userTelegramConfigs.isEnabled,
+      })
+      .from(userTelegramConfigs);
+
+    const currentTokens = new Set<string>();
+
+    for (const config of configs) {
+      if (!config.isEnabled) continue;
+      currentTokens.add(config.botToken);
+
+      // Skip if already listening on this token
+      if (activeListeners.has(config.botToken)) continue;
+
+      const listener: BotListener = {
+        botToken: config.botToken,
+        chatId: config.chatId,
+        label: `user-${config.userId}`,
+        lastUpdateId: 0,
+        running: false,
+      };
+
+      activeListeners.set(config.botToken, listener);
+      startBotLoop(listener);
+      console.log(`[TelegramBot] Started listener for user-${config.userId}`);
+    }
+
+    // Stop listeners for removed/disabled configs
+    for (const [token, listener] of activeListeners) {
+      if (!currentTokens.has(token)) {
+        listener.running = false;
+        activeListeners.delete(token);
+        console.log(`[TelegramBot] Stopped listener: ${listener.label}`);
+      }
+    }
+  } catch (err) {
+    console.error("[TelegramBot] Error syncing user listeners:", err);
+  }
+}
+
+export async function startTelegramBot(): Promise<void> {
+  // Start global bot listener (from env vars) if configured
+  if (isTelegramConfigured()) {
+    const { botToken, chatId } = getTelegramConfig();
+    if (botToken && chatId) {
+      const globalListener: BotListener = {
+        botToken,
+        chatId,
+        label: "global",
+        lastUpdateId: 0,
+        running: false,
+      };
+      activeListeners.set(botToken, globalListener);
+      startBotLoop(globalListener);
+      console.log("[TelegramBot] Started global command listener");
+    }
+  }
+
+  // Start per-user bot listeners
+  await syncUserBotListeners();
+
+  // Re-sync every 60s to pick up new/changed/removed user configs
+  setInterval(syncUserBotListeners, 60000);
 }
