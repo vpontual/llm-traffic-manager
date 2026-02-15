@@ -124,3 +124,48 @@ All standard Ollama API endpoints are supported. The proxy transparently routes 
 - **Backend**: Node.js, PostgreSQL, Drizzle ORM
 - **Build**: esbuild (proxy bundling)
 - **Infrastructure**: Docker, Docker Compose
+
+## Testing
+
+```bash
+# Installs repo Git hooks (runs automatically on npm install)
+npm run hooks:install
+
+# Unit tests
+npm test
+
+# Lint
+npm run lint
+
+# Type checks
+npm run typecheck
+
+# Run lint + typecheck + unit tests
+npm run check
+```
+
+Detailed testing and automation docs: [`TESTING.md`](./TESTING.md)
+
+### Pre-Commit Enforcement
+
+Commits run `npm run check` via `.githooks/pre-commit` (lint + typecheck + unit tests).
+If needed, reinstall hooks with:
+
+```bash
+npm run hooks:install
+```
+
+### Smoke Test
+
+The smoke test validates app readiness, auth flow, protected API access, and proxy health.
+
+```bash
+# Against an already-running local app/proxy
+npm run smoke
+
+# Against Docker Compose ports (app: 3334, proxy: 11434)
+npm run smoke:docker
+
+# Build/start compose stack and run smoke test
+npm run smoke:docker:stack
+```
