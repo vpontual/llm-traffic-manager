@@ -8,17 +8,8 @@ import { db } from "../lib/db";
 import { servers, serverSnapshots } from "../lib/schema";
 import { eq, desc } from "drizzle-orm";
 import type { OllamaRunningModel, OllamaAvailableModel } from "../lib/types";
+import { selectRoute, freeVram, type ServerSnapshot } from "./route-logic";
 
-interface ServerSnapshot {
-  id: number;
-  name: string;
-  host: string;
-  totalRamGb: number;
-  isOnline: boolean;
-  loadedModels: OllamaRunningModel[];
-  availableModels: OllamaAvailableModel[];
-  totalVramUsed: number;
-}
 
 // In-memory cache of server states, refreshed periodically from poller DB data
 let cachedStates: ServerSnapshot[] = [];
@@ -86,19 +77,6 @@ export async function refreshServerStates(): Promise<ServerSnapshot[]> {
   return states;
 }
 
-function freeVram(s: ServerSnapshot): number {
-  return s.totalRamGb * 1024 * 1024 * 1024 - s.totalVramUsed;
-}
-
-/** Pick server by priority: highest RAM tier first, round-robin among ties */
-function pickByPriority(candidates: ServerSnapshot[]): ServerSnapshot {
-  candidates.sort((a, b) => b.totalRamGb - a.totalRamGb);
-  const topRam = candidates[0].totalRamGb;
-  const tied = candidates.filter((s) => s.totalRamGb === topRam);
-  const pick = tied[roundRobinCounter % tied.length];
-  roundRobinCounter++;
-  return pick;
-}
 
 export interface RouteDecision {
   host: string;
@@ -133,75 +111,34 @@ export async function routeModel(
 
   if (onlineServers.length === 0) return null;
 
-  // Check optimistic loads for this model
   const optimistic = optimisticLoads.get(modelName);
   const optimisticServerId =
     optimistic && Date.now() - optimistic.timestamp <= OPTIMISTIC_TTL_MS
       ? optimistic.serverId
       : null;
 
-  // 1. Server with model loaded in memory (poller data OR optimistic)
-  const withModelLoaded = onlineServers.filter(
-    (s) =>
-      s.loadedModels.some((m) => m.name === modelName) ||
-      s.id === optimisticServerId
-  );
+  const result = selectRoute({
+    onlineServers,
+    modelName,
+    optimisticServerId,
+    lastRoutedServerId: lastRoutedServer.get(modelName) ?? null,
+    roundRobinCounter,
+  });
 
-  if (withModelLoaded.length > 0) {
-    const best = pickByPriority(withModelLoaded);
-    lastRoutedServer.set(modelName, best.id);
-    // Refresh optimistic timestamp — stays valid while model is actively used
-    optimisticLoads.set(modelName, { serverId: best.id, timestamp: Date.now() });
-    return {
-      host: best.host,
-      serverId: best.id,
-      serverName: best.name,
-      reason: "model_loaded",
-    };
-  }
+  if (!result) return null;
 
-  // 2. Server with model downloaded (available)
-  const withModelAvailable = onlineServers.filter((s) =>
-    s.availableModels.some((m) => m.name === modelName)
-  );
+  roundRobinCounter = result.roundRobinCounter;
+  lastRoutedServer.set(modelName, result.server.id);
+  optimisticLoads.set(modelName, {
+    serverId: result.server.id,
+    timestamp: Date.now(),
+  });
 
-  if (withModelAvailable.length > 0) {
-    let candidates = withModelAvailable;
-
-    // If multiple servers have the model, avoid the one that last handled it.
-    // That server unloaded the model (VRAM pressure), so try a different one
-    // to spread the load and reduce churn.
-    const lastServerId = lastRoutedServer.get(modelName);
-    if (lastServerId != null && candidates.length > 1) {
-      const others = candidates.filter((s) => s.id !== lastServerId);
-      if (others.length > 0) {
-        candidates = others;
-      }
-    }
-
-    const best = pickByPriority(candidates);
-    lastRoutedServer.set(modelName, best.id);
-    // Mark as optimistically loaded so the next request routes here too
-    optimisticLoads.set(modelName, { serverId: best.id, timestamp: Date.now() });
-    return {
-      host: best.host,
-      serverId: best.id,
-      serverName: best.name,
-      reason: candidates.length < withModelAvailable.length
-        ? "model_available_anti_churn"
-        : "model_available",
-    };
-  }
-
-  // 3. Fall back to server with most free VRAM
-  const best = pickByPriority(onlineServers);
-  lastRoutedServer.set(modelName, best.id);
-  optimisticLoads.set(modelName, { serverId: best.id, timestamp: Date.now() });
   return {
-    host: best.host,
-    serverId: best.id,
-    serverName: best.name,
-    reason: "fallback_most_vram",
+    host: result.server.host,
+    serverId: result.server.id,
+    serverName: result.server.name,
+    reason: result.reason,
   };
 }
 

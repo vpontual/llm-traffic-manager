@@ -3,24 +3,13 @@
 import { db } from "./db";
 import { users, sessions } from "./schema";
 import { eq, lt } from "drizzle-orm";
-import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
+import { hashPassword, verifyPassword, generateApiKey } from "./crypto";
+
+export { hashPassword, verifyPassword, generateApiKey };
 
 const SESSION_COOKIE = "fleet_session";
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const BCRYPT_ROUNDS = 10;
-
-export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, BCRYPT_ROUNDS);
-}
-
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash);
-}
-
-export function generateApiKey(): string {
-  return crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
-}
 
 export async function createSession(userId: number): Promise<string> {
   const sessionId = crypto.randomUUID();

@@ -15,7 +15,12 @@
     "tests/**/*.ts",
     "src/lib/cron-utils.ts",
     "src/lib/types.ts",
-    "src/lib/validations/**/*.ts"
+    "src/lib/validations/**/*.ts",
+    "src/lib/format.ts",
+    "src/lib/env.ts",
+    "src/lib/crypto.ts",
+    "src/proxy/route-logic.ts",
+    "src/proxy/parse.ts"
   ],
   "exclude": [
     "node_modules",

@@ -14,6 +14,7 @@ import { db } from "../lib/db";
 import { requestLogs, users } from "../lib/schema";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { readJsonEnv } from "../lib/env";
+import { extractModel } from "./parse";
 import { sendTelegramMessage } from "../lib/telegram";
 
 const PROXY_PORT = 11434;
@@ -157,14 +158,6 @@ async function readBody(req: http.IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-function extractModel(body: Buffer): string | null {
-  try {
-    const parsed = JSON.parse(body.toString());
-    return parsed.model ?? parsed.name ?? null;
-  } catch {
-    return null;
-  }
-}
 
 async function logRequest(
   sourceIp: string,
