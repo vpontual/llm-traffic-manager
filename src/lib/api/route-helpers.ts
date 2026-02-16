@@ -1,3 +1,5 @@
+// API route helpers -- auth wrappers and standard error responses
+
 import { requireAdmin, requireAuth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 

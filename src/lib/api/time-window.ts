@@ -1,3 +1,5 @@
+// Time window helpers -- parse hours param and compute since-date
+
 import { parsePositiveInt } from "@/lib/validations/numbers";
 
 const HOUR_MS = 60 * 60 * 1000;
