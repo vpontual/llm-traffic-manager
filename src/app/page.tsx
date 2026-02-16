@@ -83,6 +83,12 @@ export default function Dashboard() {
             Schedule
           </Link>
           <Link
+            href="/analytics"
+            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
+          >
+            Analytics
+          </Link>
+          <Link
             href="/history"
             className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
           >

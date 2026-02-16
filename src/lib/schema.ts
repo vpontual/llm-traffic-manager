@@ -79,6 +79,7 @@ export const requestLogs = pgTable("request_logs", {
   targetHost: text("target_host"),
   statusCode: integer("status_code"),
   durationMs: integer("duration_ms"),
+  routingReason: text("routing_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

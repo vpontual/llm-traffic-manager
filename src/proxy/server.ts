@@ -170,7 +170,8 @@ async function logRequest(
   targetServerId: number | null,
   targetHost: string | null,
   statusCode: number | null,
-  durationMs: number
+  durationMs: number,
+  routingReason: string | null = null
 ) {
   try {
     await db.insert(requestLogs).values({
@@ -183,6 +184,7 @@ async function logRequest(
       targetHost,
       statusCode,
       durationMs,
+      routingReason,
     });
   } catch (err) {
     console.error("Failed to log request:", err);
@@ -490,7 +492,7 @@ async function handleRequest(
 
     // Success or non-retryable error — done
     const duration = Date.now() - startTime;
-    logRequest(source, userId, model, path, method, route.serverId, route.host, result.statusCode, duration);
+    logRequest(source, userId, model, path, method, route.serverId, route.host, result.statusCode, duration, route.reason);
     return;
   }
 
