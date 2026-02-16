@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const { hours, since } = getHoursWindow(searchParams, 24);
-  const granularity = hours <= 168 ? "hour" : "day";
+  const granularity = sql.raw(hours <= 168 ? "'hour'" : "'day'");
 
   const [
     summaryRows,
