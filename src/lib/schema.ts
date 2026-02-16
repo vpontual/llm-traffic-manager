@@ -9,6 +9,8 @@ import {
   jsonb,
 } from "drizzle-orm/pg-core";
 
+// --- Fleet configuration ---
+
 export const servers = pgTable("servers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -16,6 +18,8 @@ export const servers = pgTable("servers", {
   totalRamGb: integer("total_ram_gb").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// --- Monitoring data ---
 
 export const serverSnapshots = pgTable("server_snapshots", {
   id: serial("id").primaryKey(),
@@ -68,6 +72,8 @@ export const systemMetrics = pgTable("system_metrics", {
   polledAt: timestamp("polled_at").defaultNow().notNull(),
 });
 
+// --- Proxy request logging ---
+
 export const requestLogs = pgTable("request_logs", {
   id: serial("id").primaryKey(),
   sourceIp: text("source_ip").notNull(),
@@ -83,6 +89,8 @@ export const requestLogs = pgTable("request_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// --- Job scheduling ---
+
 export const scheduledJobs = pgTable("scheduled_jobs", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -97,6 +105,8 @@ export const scheduledJobs = pgTable("scheduled_jobs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// --- Server lifecycle events ---
 
 export const serverEvents = pgTable("server_events", {
   id: serial("id").primaryKey(),

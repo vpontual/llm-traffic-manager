@@ -1,3 +1,7 @@
+// Auth middleware — checks for session cookie on protected routes.
+// Only verifies cookie exists, not session validity (no DB access here).
+// Full session validation happens in API route handlers.
+
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";

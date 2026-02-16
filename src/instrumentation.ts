@@ -1,15 +1,15 @@
 export async function register() {
-  // Only run on the server side
+  // --- Server-side only guard ---
   if (typeof window !== "undefined") return;
 
+  // --- Run database migrations ---
   const { migrate } = await import("drizzle-orm/postgres-js/migrator");
   const { db } = await import("./lib/db");
 
-  // Run migrations before starting poller
   await migrate(db, { migrationsFolder: "./drizzle" });
   console.log("Database migrations applied");
 
-  // Seed admin user from env vars if no users exist
+  // --- Seed admin user on first run ---
   const { users, userTelegramConfigs, userServerSubscriptions, servers } = await import("./lib/schema");
   const existingUsers = await db.select({ id: users.id }).from(users).limit(1);
 
@@ -57,18 +57,19 @@ export async function register() {
     }
   }
 
-  // Load plugins before starting poller
+  // --- Load plugins ---
   const { loadPlugins } = await import("./lib/plugins");
   const plugins = loadPlugins();
   console.log(`[Plugins] ${plugins.length} plugin(s) loaded`);
 
+  // --- Start background services ---
   const { startPoller } = await import("./lib/poller");
   await startPoller();
 
   const { startTelegramBot } = await import("./lib/telegram-bot");
   await startTelegramBot();
 
-  // Clean expired sessions every hour
+  // --- Periodic cleanup ---
   const { deleteExpiredSessions } = await import("./lib/auth");
   setInterval(deleteExpiredSessions, 60 * 60 * 1000);
 }

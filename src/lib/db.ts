@@ -1,3 +1,5 @@
+// Database connection — singleton to prevent hot-reload connection leaks in dev
+
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
