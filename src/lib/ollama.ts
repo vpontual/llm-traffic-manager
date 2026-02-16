@@ -1,3 +1,5 @@
+// Ollama API client -- health checks, model listings, server polling
+
 import type {
   OllamaPsResponse,
   OllamaTagsResponse,

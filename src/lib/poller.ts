@@ -1,15 +1,17 @@
+// Fleet poller -- polls all Ollama servers, records snapshots, detects changes
+
 import { db } from "./db";
 import { servers, serverSnapshots, modelEvents, systemMetrics, serverEvents } from "./schema";
 import { pollServer } from "./ollama";
 import { fetchSystemMetrics } from "./metrics";
 import { getAgentPlugins } from "./plugins";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { ServerConfig, OllamaRunningModel } from "./types";
 import { checkServerAlerts } from "./alerts";
 import { notifySubscribedUsers } from "./user-notifications";
 import { readJsonEnv, readPositiveIntEnv } from "./env";
 
-// In-memory state for diffing loaded models between polls
+// --- In-memory state for diffing between polls --- loaded models between polls
 const previousModels = new Map<number, Set<string>>();
 
 // In-memory state for detecting server lifecycle transitions
@@ -18,6 +20,8 @@ const previousBootSet = new Map<number, Set<string>>();
 
 // Config lookup by host for per-server settings (e.g. metricsPort)
 const serverConfigMap = new Map<string, ServerConfig>();
+
+// --- Server configuration ---
 
 function getServerConfigs(): ServerConfig[] {
   const parsed = readJsonEnv<ServerConfig[]>("OLLAMA_SERVERS");
@@ -73,6 +77,8 @@ function getMetricsHost(serverHost: string): string | null {
   const defaultPort = metricsPlugin?.defaultPort ?? 9100;
   return `${ip}:${defaultPort}`;
 }
+
+// --- Main poll loop ---
 
 async function pollAllServers() {
   const allServers = await db.select().from(servers);
@@ -260,9 +266,10 @@ async function pollAllServers() {
   );
 }
 
+// --- Data retention cleanup ---
+
 async function cleanOldSnapshots() {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const { sql } = await import("drizzle-orm");
   await Promise.all([
     db.delete(serverSnapshots).where(sql`${serverSnapshots.polledAt} < ${sevenDaysAgo}`),
     db.delete(systemMetrics).where(sql`${systemMetrics.polledAt} < ${sevenDaysAgo}`),
@@ -272,6 +279,8 @@ async function cleanOldSnapshots() {
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+// --- Poller lifecycle ---
 
 export async function startPoller() {
   const configs = getServerConfigs();

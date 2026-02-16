@@ -1,3 +1,5 @@
+// Authentication -- password hashing, sessions, API keys
+
 import { db } from "./db";
 import { users, sessions } from "./schema";
 import { eq, lt } from "drizzle-orm";

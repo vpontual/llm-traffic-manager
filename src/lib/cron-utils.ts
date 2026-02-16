@@ -1,3 +1,5 @@
+// Cron scheduling utilities -- parsing, conflict detection, slot finding
+
 import CronExpressionParser from "cron-parser";
 import type { ConflictGroup } from "./types";
 

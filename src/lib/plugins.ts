@@ -1,3 +1,5 @@
+// Plugin loader -- reads plugin manifests from the plugins/ directory
+
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
 

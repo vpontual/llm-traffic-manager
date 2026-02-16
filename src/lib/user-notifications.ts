@@ -1,3 +1,5 @@
+// Per-user Telegram notifications for server events (offline, online, reboot)
+
 import { db } from "./db";
 import { userTelegramConfigs, userServerSubscriptions, users } from "./schema";
 import { eq, and } from "drizzle-orm";

@@ -1,3 +1,5 @@
+// Fleet metrics agent client -- fetches system metrics from servers
+
 const TIMEOUT_MS = 3000;
 
 export interface RebootCause {

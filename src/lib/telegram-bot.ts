@@ -1,7 +1,10 @@
+// Telegram bot -- responds to /status, /last_reboot, /pull_missing commands
+
 import { db } from "./db";
 import { servers, serverSnapshots, systemMetrics, serverEvents, userTelegramConfigs, requestLogs } from "./schema";
 import { eq, desc, and, isNotNull } from "drizzle-orm";
 import { getTelegramConfig, isTelegramConfigured } from "./telegram";
+import { formatUptime } from "./format";
 
 interface TelegramUpdate {
   update_id: number;
@@ -12,14 +15,6 @@ interface TelegramUpdate {
   };
 }
 
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-}
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -52,6 +47,8 @@ async function sendReply(botToken: string, chatId: number, text: string): Promis
     console.error("[TelegramBot] Reply error:", err);
   }
 }
+
+// --- Bot commands ---
 
 async function handleStatus(botToken: string, chatId: number): Promise<void> {
   const allServers = await db.select().from(servers);
@@ -256,6 +253,8 @@ async function handleHelp(botToken: string, chatId: number): Promise<void> {
   await sendReply(botToken, chatId, text);
 }
 
+// --- Command dispatcher ---
+
 async function processCommand(botToken: string, chatId: number, text: string): Promise<void> {
   // Strip @botname suffix and normalize
   const parts = text.trim().split(/\s+/);
@@ -273,7 +272,7 @@ async function processCommand(botToken: string, chatId: number, text: string): P
   }
 }
 
-// --- Per-bot polling loop management ---
+// --- Bot listener management --- loop management ---
 
 interface BotListener {
   botToken: string;

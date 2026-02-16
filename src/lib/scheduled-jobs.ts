@@ -1,3 +1,5 @@
+// Scheduled jobs helpers -- query builders and row-to-API transformers
+
 import { getNextExecutions } from "@/lib/cron-utils";
 import { db } from "@/lib/db";
 import { scheduledJobs, servers } from "@/lib/schema";
