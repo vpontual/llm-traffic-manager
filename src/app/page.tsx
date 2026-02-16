@@ -1,5 +1,7 @@
 "use client";
 
+// Dashboard -- main fleet overview with server cards and activity
+
 import useSWR from "swr";
 import { ServerGrid } from "@/components/server-grid";
 import { FleetSummary } from "@/components/fleet-summary";

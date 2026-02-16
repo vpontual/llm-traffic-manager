@@ -1,5 +1,7 @@
 "use client";
 
+// Schedule page -- manage cron-based model scheduling with conflict detection
+
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
 import Link from "next/link";

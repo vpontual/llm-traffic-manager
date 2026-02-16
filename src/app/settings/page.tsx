@@ -1,5 +1,7 @@
 "use client";
 
+// Settings page -- Telegram config, API key, server subscriptions
+
 import { useState, useEffect } from "react";
 import useSWR from "swr";
 import Link from "next/link";

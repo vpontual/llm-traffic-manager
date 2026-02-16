@@ -1,5 +1,7 @@
 "use client";
 
+// First-run setup page -- create initial admin user
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 

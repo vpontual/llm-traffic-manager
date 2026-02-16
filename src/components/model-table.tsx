@@ -1,14 +1,8 @@
+import { formatBytes } from "@/lib/format";
 "use client";
 
 import type { ServerState } from "@/lib/types";
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "-";
-  const gb = bytes / (1024 * 1024 * 1024);
-  if (gb >= 1) return `${gb.toFixed(1)} GB`;
-  const mb = bytes / (1024 * 1024);
-  return `${mb.toFixed(0)} MB`;
-}
 
 interface LoadedModel {
   name: string;

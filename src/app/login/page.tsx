@@ -1,5 +1,7 @@
 "use client";
 
+// Login page -- username/password form with session creation
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 

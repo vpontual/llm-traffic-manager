@@ -1,3 +1,5 @@
+// Root layout -- global styles and metadata
+
 import type { Metadata } from "next";
 import "./globals.css";
 

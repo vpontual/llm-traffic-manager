@@ -1,5 +1,7 @@
 "use client";
 
+// Analytics page -- traffic charts, latency trends, routing quality
+
 import useSWR from "swr";
 import { useState } from "react";
 import Link from "next/link";

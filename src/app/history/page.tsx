@@ -1,5 +1,7 @@
 "use client";
 
+// History page -- request logs, model events, usage tracking
+
 import useSWR from "swr";
 import type { ModelEvent } from "@/lib/types";
 import { useState } from "react";

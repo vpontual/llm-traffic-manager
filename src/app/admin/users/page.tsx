@@ -1,5 +1,7 @@
 "use client";
 
+// Admin users page -- create/manage users (admin only)
+
 import { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";

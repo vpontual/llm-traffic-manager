@@ -1,17 +1,13 @@
 "use client";
 
+import { formatBytes } from "@/lib/format";
+
 import { useState } from "react";
 import useSWR from "swr";
 import type { ServerState, OllamaAvailableModel } from "@/lib/types";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-function formatSize(bytes: number): string {
-  const gb = bytes / (1024 * 1024 * 1024);
-  if (gb >= 1) return `${gb.toFixed(1)} GB`;
-  const mb = bytes / (1024 * 1024);
-  return `${mb.toFixed(0)} MB`;
-}
 
 interface RequestSummary {
   sourceIp: string;
@@ -122,7 +118,7 @@ export function AvailableModels({ servers }: { servers: ServerState[] }) {
                       {model.details?.family ?? "-"}
                     </td>
                     <td className="p-3 text-right text-text-secondary font-mono">
-                      {formatSize(model.size)}
+                      {formatBytes(model.size)}
                     </td>
                     <td className="p-3 text-right text-text-secondary">
                       {model.details?.parameter_size ?? "-"}
