@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatUptime, formatBytes } from "../../src/lib/format";
+import { formatUptime, formatBytes, timeAgo } from "../../src/lib/format";
 
 // --- formatUptime ---
 
@@ -56,4 +56,31 @@ test("formatBytes handles boundary at 1 GB", () => {
   const exactlyOne = 1024 * 1024 * 1024;
   assert.match(formatBytes(justUnder), /MB$/);
   assert.match(formatBytes(exactlyOne), /GB$/);
+});
+
+// --- timeAgo ---
+
+test("timeAgo returns 'just now' for recent timestamps", () => {
+  const now = new Date().toISOString();
+  assert.equal(timeAgo(now), "just now");
+});
+
+test("timeAgo returns minutes for sub-hour durations", () => {
+  const fiveMinAgo = new Date(Date.now() - 5 * 60000).toISOString();
+  assert.equal(timeAgo(fiveMinAgo), "5m ago");
+});
+
+test("timeAgo returns hours for sub-day durations", () => {
+  const threeHoursAgo = new Date(Date.now() - 3 * 3600000).toISOString();
+  assert.equal(timeAgo(threeHoursAgo), "3h ago");
+});
+
+test("timeAgo returns days for multi-day durations", () => {
+  const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString();
+  assert.equal(timeAgo(twoDaysAgo), "2d ago");
+});
+
+test("timeAgo returns 1m ago at exactly 60 seconds", () => {
+  const oneMinAgo = new Date(Date.now() - 60000).toISOString();
+  assert.equal(timeAgo(oneMinAgo), "1m ago");
 });

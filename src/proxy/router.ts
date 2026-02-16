@@ -28,7 +28,7 @@ const lastRoutedServer = new Map<string, number>();
 // (~10s polling interval), preventing anti-churn from incorrectly kicking in
 // on back-to-back requests for the same model.
 const optimisticLoads = new Map<string, { serverId: number; timestamp: number }>();
-const OPTIMISTIC_TTL_MS = 30000; // 30s — enough for load + poller to catch up
+const OPTIMISTIC_TTL_MS = 30000; // 30s, enough for load + poller to catch up
 
 export async function refreshServerStates(): Promise<ServerSnapshot[]> {
   const now = Date.now();
@@ -93,7 +93,7 @@ export interface RouteDecision {
  *    tracking after a recent routing decision)
  * 2. Server that has the model downloaded (available):
  *    - If multiple servers have it, avoid the one that last ran it (it unloaded,
- *      so it has VRAM pressure — try a different server to reduce churn)
+ *      so it has VRAM pressure, so try a different server to reduce churn)
  *    - If only one server has it, route there regardless
  * 3. Fallback: server with the most free VRAM (will need to pull the model)
  *

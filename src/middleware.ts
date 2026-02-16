@@ -1,4 +1,4 @@
-// Auth middleware — checks for session cookie on protected routes.
+// Auth middleware. Checks for session cookie on protected routes.
 // Only verifies cookie exists, not session validity (no DB access here).
 // Full session validation happens in API route handlers.
 

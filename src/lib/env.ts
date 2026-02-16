@@ -1,4 +1,4 @@
-// Environment variable utilities — read, require, parse, and validate env vars
+// Environment variable utilities: read, require, parse, and validate env vars
 
 function readEnv(name: string): string | undefined {
   const value = process.env[name];

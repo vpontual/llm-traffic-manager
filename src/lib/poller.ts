@@ -179,7 +179,7 @@ async function pollAllServers() {
           if (prevBoots) {
             for (const boot of currentBoots) {
               if (!prevBoots.has(boot)) {
-                // New boot detected — look up cause from metrics
+                // New boot detected, look up cause from metrics
                 const cause = sysMetrics.reboot_causes?.[boot];
                 let detail: string | null = null;
                 if (cause) {

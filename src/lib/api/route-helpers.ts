@@ -43,6 +43,4 @@ export async function withAdmin(
   return handler(user);
 }
 
-export function isSelfOrAdmin(user: SessionUser, targetId: number): boolean {
-  return user.isAdmin || user.id === targetId;
-}
+export { isSelfOrAdmin } from "../permissions";

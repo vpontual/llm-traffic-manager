@@ -48,7 +48,7 @@ const MODEL_ENDPOINTS = new Set([
 const AGGREGATE_ENDPOINTS = new Set(["/api/tags", "/api/ps", "/v1/models"]);
 
 // Endpoints where retry-on-model-not-found makes sense (read operations).
-// Write operations (pull, create, copy, delete) should NOT retry — they route
+// Write operations (pull, create, copy, delete) should NOT retry because they route
 // once and the target server handles the action.
 const RETRY_ENDPOINTS = new Set([
   "/api/generate",
@@ -112,17 +112,17 @@ const sourceNames = loadSourceNames();
  *   4. Cleaned IP (strip ::ffff: IPv4-mapped prefix)
  */
 function getSourceIdentifier(req: http.IncomingMessage): { source: string; userId: number | null } {
-  // 1. API key header — user identification
+  // 1. API key header for user identification
   const apiKeyHeader = req.headers["x-ollama-api-key"];
   if (typeof apiKeyHeader === "string" && apiKeyHeader.trim()) {
     const user = apiKeyCache.get(apiKeyHeader.trim());
     if (user) {
       return { source: user.username, userId: user.userId };
     }
-    // Invalid key — fall through to other methods
+    // Invalid key, fall through to other methods
   }
 
-  // 2. Explicit header — services can self-identify
+  // 2. Explicit header: services can self-identify
   const sourceHeader = req.headers["x-ollama-source"];
   if (typeof sourceHeader === "string" && sourceHeader.trim()) {
     return { source: sourceHeader.trim(), userId: null };
@@ -235,10 +235,10 @@ function proxyRequest(
         proxyRes.on("end", () => {
           const responseBody = Buffer.concat(chunks).toString();
           if (responseBody.includes("not found")) {
-            // Model not found — don't write to res, signal retry
+            // Model not found. Don't write to res, signal retry
             resolve({ statusCode, retryable: true });
           } else {
-            // Some other 404 — forward to client
+            // Some other 404, forward to client
             res.writeHead(statusCode, proxyRes.headers);
             res.end(Buffer.concat(chunks));
             resolve({ statusCode, retryable: false });
@@ -248,7 +248,7 @@ function proxyRequest(
         return;
       }
 
-      // Normal path — stream directly
+      // Normal path, stream directly
       res.writeHead(statusCode, proxyRes.headers);
       proxyRes.pipe(res);
       proxyRes.on("end", () => resolve({ statusCode, retryable: false }));
@@ -257,7 +257,7 @@ function proxyRequest(
 
     proxyReq.on("error", (err) => {
       if (allowRetry) {
-        // Connection error in retry mode — signal retry
+        // Connection error in retry mode, signal retry
         resolve({ statusCode: 502, retryable: true });
       } else {
         if (!res.headersSent) {
@@ -402,7 +402,7 @@ async function handleRequest(
   const path = (req.url ?? "/").split("?")[0];
   const method = req.method ?? "GET";
 
-  // Health check — respond directly
+  // Health check: respond directly
   if (path === "/" && method === "GET") {
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("Ollama is running");
@@ -438,7 +438,7 @@ async function handleRequest(
   // Extract model from request body
   const model = MODEL_ENDPOINTS.has(path) ? extractModel(body) : null;
 
-  // Route the request — honor X-Ollama-Pin-Server header if present
+  // Route the request. Honor X-Ollama-Pin-Server header if present
   const pinHeader = req.headers["x-ollama-pin-server"];
   const pinServerName = typeof pinHeader === "string" ? pinHeader.trim() : null;
 
@@ -457,7 +457,7 @@ async function handleRequest(
       route = await routeModel(model, excludeServerIds);
     }
     // If routeModel returned null after excluding servers, all candidates
-    // are exhausted — don't fall back to pickAnyServer (it ignores exclusions)
+    // are exhausted, so don't fall back to pickAnyServer (it ignores exclusions)
     if (!route && excludeServerIds.length > 0) {
       break;
     }
@@ -476,7 +476,7 @@ async function handleRequest(
       `[proxy] ${source} → ${route.serverName} (${route.host}) | ${method} ${path}${model ? ` | model=${model}` : ""} | reason=${route.reason}${attempt > 0 ? ` | retry=${attempt}` : ""}`
     );
 
-    // On the last attempt, don't allow retry — let the response flow to the
+    // On the last attempt, don't allow retry. Let the response flow to the
     // client even if it's an error, so they get a meaningful message.
     const allowRetry = canRetry && attempt < MAX_ROUTE_RETRIES;
     const result = await proxyRequest(route.host, req, res, body, allowRetry);
@@ -490,13 +490,13 @@ async function handleRequest(
       continue;
     }
 
-    // Success or non-retryable error — done
+    // Success or non-retryable error, done
     const duration = Date.now() - startTime;
     logRequest(source, userId, model, path, method, route.serverId, route.host, result.statusCode, duration, route.reason);
     return;
   }
 
-  // All candidate servers exhausted — return recommendation for pulling
+  // All candidate servers exhausted. Return recommendation for pulling
   if (!res.headersSent) {
     const recommendation = model ? getRecommendedPullServer() : null;
     const responseBody: Record<string, unknown> = {
@@ -507,7 +507,7 @@ async function handleRequest(
 
     if (model && recommendation) {
       responseBody.pull_recommendation = recommendation;
-      responseBody.hint = `To download this model, POST /api/pull with {"model": "${model}"} — the proxy will route it to ${recommendation.serverName} (${recommendation.freeVramGb} GB free of ${recommendation.totalRamGb} GB)`;
+      responseBody.hint = `To download this model, POST /api/pull with {"model": "${model}"}. The proxy will route it to ${recommendation.serverName} (${recommendation.freeVramGb} GB free of ${recommendation.totalRamGb} GB)`;
 
       // Send debounced Telegram notification
       const lastNotified = modelNotFoundNotified.get(model) ?? 0;

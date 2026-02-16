@@ -4,7 +4,7 @@ import { db } from "./db";
 import { servers, serverSnapshots, systemMetrics, serverEvents, userTelegramConfigs, requestLogs } from "./schema";
 import { eq, desc, and, isNotNull } from "drizzle-orm";
 import { getTelegramConfig, isTelegramConfigured } from "./telegram";
-import { formatUptime } from "./format";
+import { formatUptime, timeAgo } from "./format";
 
 interface TelegramUpdate {
   update_id: number;
@@ -16,16 +16,6 @@ interface TelegramUpdate {
 }
 
 
-function timeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 async function sendReply(botToken: string, chatId: number, text: string): Promise<void> {
   try {
@@ -70,7 +60,7 @@ async function handleStatus(botToken: string, chatId: number): Promise<void> {
       .limit(1);
 
     if (!snap) {
-      lines.push(`\u2753 <b>${server.name}</b> \u2014 no data`);
+      lines.push(`\u2753 <b>${server.name}</b> - no data`);
       continue;
     }
 
@@ -86,9 +76,9 @@ async function handleStatus(botToken: string, chatId: number): Promise<void> {
         : "no models loaded";
 
     if (snap.isOnline) {
-      lines.push(`${icon} <b>${server.name}</b> \u2014 online (${uptime}) \u2014 ${modelInfo}`);
+      lines.push(`${icon} <b>${server.name}</b> - online (${uptime}) - ${modelInfo}`);
     } else {
-      lines.push(`${icon} <b>${server.name}</b> \u2014 offline`);
+      lines.push(`${icon} <b>${server.name}</b> - offline`);
     }
   }
 
@@ -113,13 +103,13 @@ async function handleLastReboot(botToken: string, chatId: number): Promise<void>
       .limit(1);
 
     if (!reboot) {
-      lines.push(`<b>${server.name}</b> \u2014 no reboots recorded`);
+      lines.push(`<b>${server.name}</b> - no reboots recorded`);
       continue;
     }
 
     const ago = timeAgo(reboot.occurredAt.toISOString());
     const detail = reboot.detail ?? "unknown cause";
-    lines.push(`<b>${server.name}</b> \u2014 ${ago} \u2014 ${detail}`);
+    lines.push(`<b>${server.name}</b> - ${ago} - ${detail}`);
   }
 
   await sendReply(botToken, chatId, lines.join("\n"));
@@ -164,7 +154,7 @@ async function findBestPullServer(): Promise<{
 }
 
 /**
- * Handle /pull_missing — download the most recent missing model to the best server.
+ * Handle /pull_missing: download the most recent missing model to the best server.
  * Accepts optional model name: /pull_missing <model>
  */
 async function handlePullMissing(botToken: string, chatId: number, args: string): Promise<void> {
@@ -244,11 +234,11 @@ async function handlePullMissing(botToken: string, chatId: number, args: string)
 async function handleHelp(botToken: string, chatId: number): Promise<void> {
   const text = [
     "<b>Available Commands</b>\n",
-    "/status \u2014 Show fleet status: online/offline state, uptime, and loaded models for each server",
-    "/last_reboot \u2014 Show the most recent reboot for each server with timestamp and cause",
-    "/pull_missing \u2014 Download the last missing model to the best server",
-    "/pull_missing &lt;model&gt; \u2014 Download a specific model to the best server",
-    "/help \u2014 Show this list of commands",
+    "/status - Show fleet status: online/offline state, uptime, and loaded models for each server",
+    "/last_reboot - Show the most recent reboot for each server with timestamp and cause",
+    "/pull_missing - Download the last missing model to the best server",
+    "/pull_missing &lt;model&gt; - Download a specific model to the best server",
+    "/help - Show this list of commands",
   ].join("\n");
   await sendReply(botToken, chatId, text);
 }

@@ -4,35 +4,35 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-22-green.svg)](https://nodejs.org/)
 
-A dashboard and intelligent proxy for managing a fleet of [Ollama](https://ollama.com) GPU servers. Monitor server status, route requests to the best available server, track usage analytics, and schedule model operations — all from a single interface.
+A dashboard and intelligent proxy for managing a fleet of [Ollama](https://ollama.com) GPU servers. Monitor server status, route requests to the best available server, track usage analytics, and schedule model operations, all from a single interface.
 
 Built for anyone running multiple Ollama instances across different machines who wants centralized management without the complexity.
 
 ## Features
 
-- **Real-time Fleet Monitoring** — Live dashboard showing server status, loaded models, VRAM usage, and system metrics
-- **Intelligent Request Routing** — Automatically routes requests to the best available server:
+- **Real-time Fleet Monitoring** - Live dashboard showing server status, loaded models, VRAM usage, and system metrics
+- **Intelligent Request Routing** - Automatically routes requests to the best available server:
   1. Server with model already loaded (fastest)
   2. Server with model on disk (no download needed)
   3. Server with most free VRAM (round-robin tiebreaker)
-- **Request Aggregation** — Combines `/api/tags`, `/api/ps`, and `/v1/models` responses from all servers
-- **Usage Analytics** — Track model load times, duration, and frequency
-- **Event Timeline** — Visual timeline of model load/unload events
-- **System Metrics** — CPU/GPU temperature, memory, disk, and uptime monitoring
-- **Request Audit Log** — Logs all proxy requests with latency metrics
-- **Scheduled Jobs** — Cron-based model scheduling with conflict detection
-- **Auto-Discovery** — Discover cron jobs from Docker containers via environment variables
-- **Multi-User Auth** — Cookie-based sessions with per-user Telegram notification preferences
-- **Telegram Alerts** — Server offline/online, overheating, low memory, and reboot notifications
-- **Plugin System** — Extensible architecture for community plugins (see [PLUGINS.md](docs/PLUGINS.md))
-- **OpenAI API Compatible** — Supports `/v1/*` endpoints
+- **Request Aggregation** - Combines `/api/tags`, `/api/ps`, and `/v1/models` responses from all servers
+- **Usage Analytics** - Track model load times, duration, and frequency
+- **Event Timeline** - Visual timeline of model load/unload events
+- **System Metrics** - CPU/GPU temperature, memory, disk, and uptime monitoring
+- **Request Audit Log** - Logs all proxy requests with latency metrics
+- **Scheduled Jobs** - Cron-based model scheduling with conflict detection
+- **Auto-Discovery** - Discover cron jobs from Docker containers via environment variables
+- **Multi-User Auth** - Cookie-based sessions with per-user Telegram notification preferences
+- **Telegram Alerts** - Server offline/online, overheating, low memory, and reboot notifications
+- **Plugin System** - Extensible architecture for community plugins (see [PLUGINS.md](docs/PLUGINS.md))
+- **OpenAI API Compatible** - Supports `/v1/*` endpoints
 
 ## Architecture
 
 The application runs two parallel processes inside a single container:
 
-- **Next.js Dashboard (Port 3000)** — Web UI for fleet monitoring and analytics
-- **HTTP Proxy Server (Port 11434)** — Routes Ollama API requests to the best available server
+- **Next.js Dashboard (Port 3000)** - Web UI for fleet monitoring and analytics
+- **HTTP Proxy Server (Port 11434)** - Routes Ollama API requests to the best available server
 
 A background polling service periodically fetches server status and system metrics, storing snapshots in PostgreSQL for historical analysis.
 
@@ -55,7 +55,7 @@ docker compose up -d
 
 Access the dashboard at **http://localhost:3334**. On first visit you'll be prompted to create an admin account.
 
-The proxy is available at **http://localhost:11434** — point your Ollama clients here instead of a single server.
+The proxy is available at **http://localhost:11434**. Point your Ollama clients here instead of a single server.
 
 ### Manual Setup
 
@@ -120,7 +120,7 @@ To display CPU/GPU temperature, memory, and disk metrics, install the lightweigh
 
 Ollama Fleet Manager supports a plugin architecture for extending functionality. Plugins are loaded at startup from the `plugins/` directory.
 
-**fleet-metrics** is the first official plugin — a lightweight Python agent that collects system metrics (CPU/GPU temperature, memory, disk, uptime) from each server in your fleet.
+**fleet-metrics** is the first official plugin, a lightweight Python agent that collects system metrics (CPU/GPU temperature, memory, disk, uptime) from each server in your fleet.
 
 See [PLUGINS.md](docs/PLUGINS.md) for the full plugin guide, including how to create your own.
 
@@ -136,23 +136,23 @@ See [PLUGINS.md](docs/PLUGINS.md) for the full plugin guide, including how to cr
 
 ### Dashboard API
 
-- `GET /api/servers` — Server status with metrics
-- `GET /api/events?hours=24` — Model load/unload events
-- `GET /api/requests?hours=24` — Proxy request logs
-- `GET /api/usage?hours=168` — Model usage statistics
-- `GET /api/plugins` — List installed plugins
-- `POST /api/poll` — Trigger manual polling
+- `GET /api/servers` - Server status with metrics
+- `GET /api/events?hours=24` - Model load/unload events
+- `GET /api/requests?hours=24` - Proxy request logs
+- `GET /api/usage?hours=168` - Model usage statistics
+- `GET /api/plugins` - List installed plugins
+- `POST /api/poll` - Trigger manual polling
 
 ### Scheduled Jobs API
 
-- `GET /api/scheduled-jobs` — List all scheduled jobs
-- `POST /api/scheduled-jobs` — Create a new job
-- `PUT /api/scheduled-jobs/:id` — Update a job
-- `DELETE /api/scheduled-jobs/:id` — Delete a job
-- `GET /api/scheduled-jobs/timeline?hours=24` — Get timeline with conflicts
-- `GET /api/scheduled-jobs/suggestions?model=X&durationMs=Y` — Find open time slots
-- `GET /api/scheduled-jobs/discover` — Discover jobs from Docker containers
-- `POST /api/scheduled-jobs/discover` — Discover and import jobs
+- `GET /api/scheduled-jobs` - List all scheduled jobs
+- `POST /api/scheduled-jobs` - Create a new job
+- `PUT /api/scheduled-jobs/:id` - Update a job
+- `DELETE /api/scheduled-jobs/:id` - Delete a job
+- `GET /api/scheduled-jobs/timeline?hours=24` - Get timeline with conflicts
+- `GET /api/scheduled-jobs/suggestions?model=X&durationMs=Y` - Find open time slots
+- `GET /api/scheduled-jobs/discover` - Discover jobs from Docker containers
+- `POST /api/scheduled-jobs/discover` - Discover and import jobs
 
 ### Proxy (Port 11434)
 

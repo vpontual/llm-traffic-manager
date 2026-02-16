@@ -8,7 +8,7 @@ Ollama Fleet Manager supports a plugin architecture for extending functionality.
 
 An **agent** plugin is an external process running on remote servers. The poller collects data from agent endpoints on each poll cycle.
 
-Example: `fleet-metrics` — a Python service that exposes system metrics (CPU/GPU temp, memory, disk, uptime) over HTTP.
+Example: `fleet-metrics`, a Python service that exposes system metrics (CPU/GPU temp, memory, disk, uptime) over HTTP.
 
 ### Hook (coming soon)
 

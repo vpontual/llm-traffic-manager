@@ -10,10 +10,10 @@ This code of conduct applies to all project spaces including issues, pull reques
 
 ## Guidelines
 
-- **Be welcoming** — Help newcomers get started and feel included
-- **Be constructive** — Give feedback that helps improve, not tear down
-- **Be respectful** — Disagree on ideas, not people
-- **Be patient** — Everyone was new once
+- **Be welcoming.** Help newcomers get started and feel included
+- **Be constructive.** Give feedback that helps improve, not tear down
+- **Be respectful.** Disagree on ideas, not people
+- **Be patient.** Everyone was new once
 
 ## Enforcement
 

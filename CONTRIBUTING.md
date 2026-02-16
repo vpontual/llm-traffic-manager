@@ -63,7 +63,7 @@ Pre-commit hooks run `npm run check` automatically. They're installed when you r
 
 ## Pull Request Guidelines
 
-- Keep PRs focused — one feature or fix per PR
+- Keep PRs focused: one feature or fix per PR
 - Include a description of what changed and why
 - Add tests for new functionality
 - Update documentation if needed
@@ -71,7 +71,7 @@ Pre-commit hooks run `npm run check` automatically. They're installed when you r
 ## Code Style
 
 - TypeScript strict mode is enforced
-- ESLint is configured — run `npm run lint` to check
+- ESLint is configured. Run `npm run lint` to check
 - Follow existing patterns in the codebase
 
 ## Reporting Bugs

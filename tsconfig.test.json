@@ -7,7 +7,9 @@
     "module": "commonjs",
     "moduleResolution": "node",
     "target": "ES2022",
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "incremental": false,
     "plugins": []
   },
@@ -20,7 +22,10 @@
     "src/lib/env.ts",
     "src/lib/crypto.ts",
     "src/proxy/route-logic.ts",
-    "src/proxy/parse.ts"
+    "src/proxy/parse.ts",
+    "src/lib/api/time-window.ts",
+    "src/lib/permissions.ts",
+    "src/lib/alert-rules.ts"
   ],
   "exclude": [
     "node_modules",

@@ -83,7 +83,7 @@ export async function PUT(request: NextRequest) {
         }),
       });
     } catch {
-      // Non-fatal — config is saved regardless
+      // Non-fatal: config is saved regardless
     }
 
     return NextResponse.json({ ok: true });
