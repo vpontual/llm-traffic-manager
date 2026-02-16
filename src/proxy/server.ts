@@ -4,6 +4,8 @@ import {
   pickAnyServer,
   getAllOnlineServers,
   resolveServerByName,
+  clearOptimisticLoad,
+  getRecommendedPullServer,
 } from "./router";
 import { db } from "../lib/db";
 import { requestLogs, users } from "../lib/schema";
@@ -11,6 +13,9 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { readJsonEnv } from "../lib/env";
 
 const PROXY_PORT = 11434;
+
+// Maximum number of servers to try before giving up on model-not-found retries
+const MAX_ROUTE_RETRIES = 3;
 
 // Endpoints where we extract a model field from the request body
 const MODEL_ENDPOINTS = new Set([
@@ -30,6 +35,20 @@ const MODEL_ENDPOINTS = new Set([
 
 // Endpoints where we aggregate responses from all servers
 const AGGREGATE_ENDPOINTS = new Set(["/api/tags", "/api/ps", "/v1/models"]);
+
+// Endpoints where retry-on-model-not-found makes sense (read operations).
+// Write operations (pull, create, copy, delete) should NOT retry — they route
+// once and the target server handles the action.
+const RETRY_ENDPOINTS = new Set([
+  "/api/generate",
+  "/api/chat",
+  "/api/embed",
+  "/api/embeddings",
+  "/api/show",
+  "/v1/chat/completions",
+  "/v1/completions",
+  "/v1/embeddings",
+]);
 
 // --- API Key cache for user identification ---
 let apiKeyCache = new Map<string, { userId: number; username: string }>();
@@ -165,15 +184,27 @@ async function logRequest(
   }
 }
 
+interface ProxyResult {
+  statusCode: number;
+  retryable: boolean;
+}
+
 /**
  * Proxy a request to a target Ollama server, streaming the response back.
+ *
+ * When allowRetry is true, 404 responses are intercepted and checked for
+ * "not found" in the body (Ollama's model-not-found pattern). If detected,
+ * the response is NOT written to `res` and retryable is set to true so the
+ * caller can re-route to a different server. Connection errors (ECONNREFUSED
+ * etc.) are also retryable.
  */
 function proxyRequest(
   targetHost: string,
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  body: Buffer
-): Promise<number> {
+  body: Buffer,
+  allowRetry: boolean = false
+): Promise<ProxyResult> {
   return new Promise((resolve, reject) => {
     const [host, port] = targetHost.split(":");
     const options: http.RequestOptions = {
@@ -190,18 +221,46 @@ function proxyRequest(
     };
 
     const proxyReq = http.request(options, (proxyRes) => {
-      res.writeHead(proxyRes.statusCode ?? 500, proxyRes.headers);
+      const statusCode = proxyRes.statusCode ?? 500;
+
+      // In retry mode, intercept 404s to check for model-not-found
+      if (allowRetry && statusCode === 404) {
+        const chunks: Buffer[] = [];
+        proxyRes.on("data", (chunk: Buffer) => chunks.push(chunk));
+        proxyRes.on("end", () => {
+          const responseBody = Buffer.concat(chunks).toString();
+          if (responseBody.includes("not found")) {
+            // Model not found — don't write to res, signal retry
+            resolve({ statusCode, retryable: true });
+          } else {
+            // Some other 404 — forward to client
+            res.writeHead(statusCode, proxyRes.headers);
+            res.end(Buffer.concat(chunks));
+            resolve({ statusCode, retryable: false });
+          }
+        });
+        proxyRes.on("error", reject);
+        return;
+      }
+
+      // Normal path — stream directly
+      res.writeHead(statusCode, proxyRes.headers);
       proxyRes.pipe(res);
-      proxyRes.on("end", () => resolve(proxyRes.statusCode ?? 500));
+      proxyRes.on("end", () => resolve({ statusCode, retryable: false }));
       proxyRes.on("error", reject);
     });
 
     proxyReq.on("error", (err) => {
-      if (!res.headersSent) {
-        res.writeHead(502);
-        res.end(JSON.stringify({ error: `proxy error: ${err.message}` }));
+      if (allowRetry) {
+        // Connection error in retry mode — signal retry
+        resolve({ statusCode: 502, retryable: true });
+      } else {
+        if (!res.headersSent) {
+          res.writeHead(502);
+          res.end(JSON.stringify({ error: `proxy error: ${err.message}` }));
+        }
+        resolve({ statusCode: 502, retryable: false });
       }
-      resolve(502);
     });
 
     proxyReq.on("timeout", () => {
@@ -210,7 +269,7 @@ function proxyRequest(
         res.writeHead(504);
         res.end(JSON.stringify({ error: "upstream timeout" }));
       }
-      resolve(504);
+      resolve({ statusCode: 504, retryable: false });
     });
 
     proxyReq.write(body);
@@ -376,34 +435,80 @@ async function handleRequest(
   const pinHeader = req.headers["x-ollama-pin-server"];
   const pinServerName = typeof pinHeader === "string" ? pinHeader.trim() : null;
 
-  let route;
-  if (pinServerName) {
-    route = await resolveServerByName(pinServerName);
-  }
-  if (!route && model) {
-    route = await routeModel(model);
-  }
-  if (!route) {
-    route = await pickAnyServer();
-  }
+  // Retry logic: if a server returns model-not-found or is unreachable,
+  // exclude it and try the next best server. Only retry for model endpoints
+  // without a pin header (pinned requests go where they're told).
+  const canRetry = model != null && !pinServerName && RETRY_ENDPOINTS.has(path);
+  const excludeServerIds: number[] = [];
 
-  if (!route) {
-    res.writeHead(503);
-    res.end(JSON.stringify({ error: "no online servers available" }));
-    logRequest(source, userId, model, path, method, null, null, 503, Date.now() - startTime);
+  for (let attempt = 0; attempt <= MAX_ROUTE_RETRIES; attempt++) {
+    let route;
+    if (pinServerName) {
+      route = await resolveServerByName(pinServerName);
+    }
+    if (!route && model) {
+      route = await routeModel(model, excludeServerIds);
+    }
+    // If routeModel returned null after excluding servers, all candidates
+    // are exhausted — don't fall back to pickAnyServer (it ignores exclusions)
+    if (!route && excludeServerIds.length > 0) {
+      break;
+    }
+    if (!route) {
+      route = await pickAnyServer();
+    }
+
+    if (!route) {
+      res.writeHead(503);
+      res.end(JSON.stringify({ error: "no online servers available" }));
+      logRequest(source, userId, model, path, method, null, null, 503, Date.now() - startTime);
+      return;
+    }
+
+    console.log(
+      `[proxy] ${source} → ${route.serverName} (${route.host}) | ${method} ${path}${model ? ` | model=${model}` : ""} | reason=${route.reason}${attempt > 0 ? ` | retry=${attempt}` : ""}`
+    );
+
+    // On the last attempt, don't allow retry — let the response flow to the
+    // client even if it's an error, so they get a meaningful message.
+    const allowRetry = canRetry && attempt < MAX_ROUTE_RETRIES;
+    const result = await proxyRequest(route.host, req, res, body, allowRetry);
+
+    if (result.retryable) {
+      console.log(
+        `[proxy] ${result.statusCode === 404 ? "Model not found" : "Server unreachable"} on ${route.serverName} (${route.host}), trying next server...`
+      );
+      excludeServerIds.push(route.serverId);
+      clearOptimisticLoad(model!, route.serverId);
+      continue;
+    }
+
+    // Success or non-retryable error — done
+    const duration = Date.now() - startTime;
+    logRequest(source, userId, model, path, method, route.serverId, route.host, result.statusCode, duration);
     return;
   }
 
-  console.log(
-    `[proxy] ${source} → ${route.serverName} (${route.host}) | ${method} ${path}${model ? ` | model=${model}` : ""} | reason=${route.reason}`
-  );
+  // All candidate servers exhausted — return recommendation for pulling
+  if (!res.headersSent) {
+    const responseBody: Record<string, unknown> = {
+      error: model
+        ? `model '${model}' not found on any available server`
+        : "no online servers available",
+    };
 
-  // Proxy the request
-  const statusCode = await proxyRequest(route.host, req, res, body);
-  const duration = Date.now() - startTime;
+    if (model) {
+      const recommendation = getRecommendedPullServer();
+      if (recommendation) {
+        responseBody.pull_recommendation = recommendation;
+        responseBody.hint = `To download this model, POST /api/pull with {"model": "${model}"} — the proxy will route it to ${recommendation.serverName} (${recommendation.freeVramGb} GB free of ${recommendation.totalRamGb} GB)`;
+      }
+    }
 
-  // Log asynchronously (don't block response)
-  logRequest(source, userId, model, path, method, route.serverId, route.host, statusCode, duration);
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify(responseBody));
+  }
+  logRequest(source, userId, model, path, method, null, null, 404, Date.now() - startTime);
 }
 
 async function main() {

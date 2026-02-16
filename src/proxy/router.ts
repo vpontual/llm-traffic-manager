@@ -112,10 +112,18 @@ export interface RouteDecision {
  *      so it has VRAM pressure — try a different server to reduce churn)
  *    - If only one server has it, route there regardless
  * 3. Fallback: server with the most free VRAM (will need to pull the model)
+ *
+ * @param excludeServerIds - Server IDs to skip (used by retry logic when a
+ *   server returned model-not-found or was unreachable)
  */
-export async function routeModel(modelName: string): Promise<RouteDecision | null> {
+export async function routeModel(
+  modelName: string,
+  excludeServerIds: number[] = []
+): Promise<RouteDecision | null> {
   const states = await refreshServerStates();
-  const onlineServers = states.filter((s) => s.isOnline);
+  const onlineServers = states.filter(
+    (s) => s.isOnline && !excludeServerIds.includes(s.id)
+  );
 
   if (onlineServers.length === 0) return null;
 
@@ -188,6 +196,53 @@ export async function routeModel(modelName: string): Promise<RouteDecision | nul
     serverId: best.id,
     serverName: best.name,
     reason: "fallback_most_vram",
+  };
+}
+
+/**
+ * Clear optimistic load and last-routed tracking for a model on a specific
+ * server. Called by the proxy retry logic when a server returns model-not-found
+ * or is unreachable, so the next routing attempt isn't biased toward it.
+ */
+export function clearOptimisticLoad(modelName: string, serverId: number): void {
+  const entry = optimisticLoads.get(modelName);
+  if (entry && entry.serverId === serverId) {
+    optimisticLoads.delete(modelName);
+  }
+  if (lastRoutedServer.get(modelName) === serverId) {
+    lastRoutedServer.delete(modelName);
+  }
+}
+
+/**
+ * Recommend the best server to pull a model to, based on free VRAM.
+ * Returns server details with reasoning, or null if no servers are online.
+ * Uses cached state (synchronous) so it can be called from error handlers.
+ */
+export interface PullRecommendation {
+  serverName: string;
+  serverHost: string;
+  totalRamGb: number;
+  freeVramGb: number;
+  loadedModels: string[];
+  reason: string;
+}
+
+export function getRecommendedPullServer(): PullRecommendation | null {
+  const online = cachedStates.filter((s) => s.isOnline);
+  if (online.length === 0) return null;
+
+  const sorted = [...online].sort((a, b) => freeVram(b) - freeVram(a));
+  const best = sorted[0];
+  const freeGb = Math.round((freeVram(best) / (1024 * 1024 * 1024)) * 10) / 10;
+
+  return {
+    serverName: best.name,
+    serverHost: best.host,
+    totalRamGb: best.totalRamGb,
+    freeVramGb: freeGb,
+    loadedModels: best.loadedModels.map((m) => m.name),
+    reason: `Most free VRAM (${freeGb} GB of ${best.totalRamGb} GB)`,
   };
 }
 
