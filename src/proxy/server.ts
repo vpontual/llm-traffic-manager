@@ -11,11 +11,16 @@ import { db } from "../lib/db";
 import { requestLogs, users } from "../lib/schema";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { readJsonEnv } from "../lib/env";
+import { sendTelegramMessage } from "../lib/telegram";
 
 const PROXY_PORT = 11434;
 
 // Maximum number of servers to try before giving up on model-not-found retries
 const MAX_ROUTE_RETRIES = 3;
+
+// Debounce Telegram notifications per model (5 minutes)
+const modelNotFoundNotified = new Map<string, number>();
+const NOTIFY_DEBOUNCE_MS = 300000;
 
 // Endpoints where we extract a model field from the request body
 const MODEL_ENDPOINTS = new Set([
@@ -491,17 +496,33 @@ async function handleRequest(
 
   // All candidate servers exhausted — return recommendation for pulling
   if (!res.headersSent) {
+    const recommendation = model ? getRecommendedPullServer() : null;
     const responseBody: Record<string, unknown> = {
       error: model
         ? `model '${model}' not found on any available server`
         : "no online servers available",
     };
 
-    if (model) {
-      const recommendation = getRecommendedPullServer();
-      if (recommendation) {
-        responseBody.pull_recommendation = recommendation;
-        responseBody.hint = `To download this model, POST /api/pull with {"model": "${model}"} — the proxy will route it to ${recommendation.serverName} (${recommendation.freeVramGb} GB free of ${recommendation.totalRamGb} GB)`;
+    if (model && recommendation) {
+      responseBody.pull_recommendation = recommendation;
+      responseBody.hint = `To download this model, POST /api/pull with {"model": "${model}"} — the proxy will route it to ${recommendation.serverName} (${recommendation.freeVramGb} GB free of ${recommendation.totalRamGb} GB)`;
+
+      // Send debounced Telegram notification
+      const lastNotified = modelNotFoundNotified.get(model) ?? 0;
+      if (Date.now() - lastNotified > NOTIFY_DEBOUNCE_MS) {
+        modelNotFoundNotified.set(model, Date.now());
+        const loaded = recommendation.loadedModels.length > 0
+          ? recommendation.loadedModels.join(", ")
+          : "none";
+        sendTelegramMessage(
+          `⚠️ <b>Model not found</b>\n\n` +
+          `Model: <code>${model}</code>\n` +
+          `Requested by: ${source}\n` +
+          `Best server: <b>${recommendation.serverName}</b> ` +
+          `(${recommendation.freeVramGb} GB free of ${recommendation.totalRamGb} GB)\n` +
+          `Currently loaded: ${loaded}\n\n` +
+          `Reply /pull_missing to download it.`
+        );
       }
     }
 

@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { servers, serverSnapshots, systemMetrics, serverEvents, userTelegramConfigs } from "./schema";
-import { eq, desc, and } from "drizzle-orm";
+import { servers, serverSnapshots, systemMetrics, serverEvents, userTelegramConfigs, requestLogs } from "./schema";
+import { eq, desc, and, isNotNull } from "drizzle-orm";
 import { getTelegramConfig, isTelegramConfigured } from "./telegram";
 
 interface TelegramUpdate {
@@ -128,22 +128,146 @@ async function handleLastReboot(botToken: string, chatId: number): Promise<void>
   await sendReply(botToken, chatId, lines.join("\n"));
 }
 
+/**
+ * Find the best online server to pull a model to (most free VRAM).
+ */
+async function findBestPullServer(): Promise<{
+  name: string;
+  host: string;
+  totalRamGb: number;
+  freeVramGb: number;
+} | null> {
+  const allServers = await db.select().from(servers);
+  let best: { name: string; host: string; totalRamGb: number; freeVramGb: number } | null = null;
+  let bestFreeVram = -1;
+
+  for (const server of allServers) {
+    const [snap] = await db
+      .select()
+      .from(serverSnapshots)
+      .where(eq(serverSnapshots.serverId, server.id))
+      .orderBy(desc(serverSnapshots.polledAt))
+      .limit(1);
+
+    if (!snap?.isOnline) continue;
+
+    const freeBytes = server.totalRamGb * 1024 * 1024 * 1024 - (snap.totalVramUsed ?? 0);
+    if (freeBytes > bestFreeVram) {
+      bestFreeVram = freeBytes;
+      best = {
+        name: server.name,
+        host: server.host,
+        totalRamGb: server.totalRamGb,
+        freeVramGb: Math.round((freeBytes / (1024 * 1024 * 1024)) * 10) / 10,
+      };
+    }
+  }
+
+  return best;
+}
+
+/**
+ * Handle /pull_missing — download the most recent missing model to the best server.
+ * Accepts optional model name: /pull_missing <model>
+ */
+async function handlePullMissing(botToken: string, chatId: number, args: string): Promise<void> {
+  let modelName = args.trim();
+
+  // If no model specified, find the most recent 404 from request_logs
+  if (!modelName) {
+    const [recent] = await db
+      .select({ model: requestLogs.model })
+      .from(requestLogs)
+      .where(
+        and(
+          eq(requestLogs.statusCode, 404),
+          isNotNull(requestLogs.model)
+        )
+      )
+      .orderBy(desc(requestLogs.createdAt))
+      .limit(1);
+
+    if (!recent?.model) {
+      await sendReply(botToken, chatId, "No recent missing models found.");
+      return;
+    }
+    modelName = recent.model;
+  }
+
+  // Find best server
+  const target = await findBestPullServer();
+  if (!target) {
+    await sendReply(botToken, chatId, "\u274c No online servers available for pulling.");
+    return;
+  }
+
+  await sendReply(
+    botToken,
+    chatId,
+    `\u2b07\ufe0f Pulling <b>${modelName}</b> to <b>${target.name}</b> (${target.freeVramGb} GB free of ${target.totalRamGb} GB)...\n\nThis may take a while for large models.`
+  );
+
+  try {
+    const controller = new AbortController();
+    // 30-minute timeout for very large model downloads
+    const timeout = setTimeout(() => controller.abort(), 1800000);
+
+    const res = await fetch(`http://${target.host}/api/pull`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: modelName, stream: false }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (res.ok) {
+      await sendReply(
+        botToken,
+        chatId,
+        `\u2705 <b>${modelName}</b> pulled to <b>${target.name}</b> successfully!`
+      );
+    } else {
+      const body = await res.text();
+      await sendReply(
+        botToken,
+        chatId,
+        `\u274c Pull failed (${res.status}): ${body.slice(0, 300)}`
+      );
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("abort")) {
+      await sendReply(botToken, chatId, `\u274c Pull timed out after 30 minutes.`);
+    } else {
+      await sendReply(botToken, chatId, `\u274c Pull error: ${msg}`);
+    }
+  }
+}
+
 async function handleHelp(botToken: string, chatId: number): Promise<void> {
   const text = [
     "<b>Available Commands</b>\n",
     "/status \u2014 Show fleet status: online/offline state, uptime, and loaded models for each server",
     "/last_reboot \u2014 Show the most recent reboot for each server with timestamp and cause",
+    "/pull_missing \u2014 Download the last missing model to the best server",
+    "/pull_missing &lt;model&gt; \u2014 Download a specific model to the best server",
     "/help \u2014 Show this list of commands",
   ].join("\n");
   await sendReply(botToken, chatId, text);
 }
 
 async function processCommand(botToken: string, chatId: number, text: string): Promise<void> {
-  const cmd = text.trim().toLowerCase().split("@")[0];
+  // Strip @botname suffix and normalize
+  const parts = text.trim().split(/\s+/);
+  const cmd = parts[0].toLowerCase().split("@")[0];
+  const args = parts.slice(1).join(" ");
+
   if (cmd === "/status") {
     await handleStatus(botToken, chatId);
   } else if (cmd === "/last_reboot" || cmd === "/lastreboot") {
     await handleLastReboot(botToken, chatId);
+  } else if (cmd === "/pull_missing" || cmd === "/pullmissing") {
+    await handlePullMissing(botToken, chatId, args);
   } else if (cmd === "/help" || cmd === "/start") {
     await handleHelp(botToken, chatId);
   }
