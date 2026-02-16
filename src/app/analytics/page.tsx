@@ -247,7 +247,7 @@ export default function AnalyticsPage() {
               {/* Model Distribution */}
               <div className="bg-surface-raised border border-border rounded-xl p-4">
                 <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
-                  Models
+                  Requests by Model
                 </h2>
                 <div className="space-y-2">
                   {data.modelDistribution.map((m) => (
@@ -265,7 +265,7 @@ export default function AnalyticsPage() {
               {/* Source Distribution */}
               <div className="bg-surface-raised border border-border rounded-xl p-4">
                 <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
-                  Sources
+                  Requests by Source
                 </h2>
                 <div className="space-y-2">
                   {data.sourceDistribution.map((s) => (
@@ -283,7 +283,7 @@ export default function AnalyticsPage() {
               {/* Server Distribution */}
               <div className="bg-surface-raised border border-border rounded-xl p-4">
                 <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
-                  Servers
+                  Requests by Server
                 </h2>
                 <div className="space-y-2">
                   {data.serverDistribution.map((s) => (
