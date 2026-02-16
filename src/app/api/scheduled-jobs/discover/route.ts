@@ -1,3 +1,5 @@
+// GET/POST /api/scheduled-jobs/discover -- discover jobs from container env vars
+
 import { NextResponse } from "next/server";
 import http from "http";
 

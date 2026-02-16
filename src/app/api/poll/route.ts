@@ -1,3 +1,5 @@
+// POST /api/poll -- trigger an immediate poll of all servers
+
 import { NextResponse } from "next/server";
 import { pollAllServers } from "@/lib/poller";
 

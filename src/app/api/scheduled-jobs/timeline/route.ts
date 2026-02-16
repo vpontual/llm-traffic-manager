@@ -1,3 +1,5 @@
+// GET /api/scheduled-jobs/timeline -- predicted execution timeline with conflicts
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { scheduledJobs } from "@/lib/schema";

@@ -1,3 +1,5 @@
+// GET /api/analytics -- aggregated traffic stats, latency, distribution charts
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requestLogs, servers } from "@/lib/schema";

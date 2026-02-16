@@ -1,3 +1,5 @@
+// GET /api/system-metrics -- system metrics time-series for a server
+
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { systemMetrics } from "@/lib/schema";

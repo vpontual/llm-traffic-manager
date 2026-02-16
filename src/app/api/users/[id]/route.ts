@@ -1,3 +1,5 @@
+// GET/PATCH/DELETE /api/users/:id -- manage individual user (self or admin)
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";

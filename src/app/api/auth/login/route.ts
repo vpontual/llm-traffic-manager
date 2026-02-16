@@ -1,3 +1,5 @@
+// POST /api/auth/login -- validate credentials and create session
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";

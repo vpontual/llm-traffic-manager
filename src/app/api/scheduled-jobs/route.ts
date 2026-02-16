@@ -1,3 +1,5 @@
+// GET/POST /api/scheduled-jobs -- list or create scheduled jobs
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { scheduledJobs, servers } from "@/lib/schema";

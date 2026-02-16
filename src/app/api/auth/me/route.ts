@@ -1,3 +1,5 @@
+// GET /api/auth/me -- return current session user or setup status
+
 import { NextResponse } from "next/server";
 import { getSessionUser, isFirstUser } from "@/lib/auth";
 

@@ -1,3 +1,5 @@
+// GET /api/servers -- return all servers with latest snapshot and metrics
+
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { servers, serverSnapshots, modelEvents, systemMetrics } from "@/lib/schema";

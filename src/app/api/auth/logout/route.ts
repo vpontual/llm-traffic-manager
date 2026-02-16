@@ -1,3 +1,5 @@
+// POST /api/auth/logout -- invalidate session and clear cookie
+
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sessions } from "@/lib/schema";

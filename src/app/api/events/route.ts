@@ -1,3 +1,5 @@
+// GET /api/events -- return model load/unload events within time window
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { modelEvents, servers } from "@/lib/schema";

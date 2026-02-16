@@ -1,3 +1,5 @@
+// GET /api/usage -- per-server model usage durations from event log
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { modelEvents, servers } from "@/lib/schema";

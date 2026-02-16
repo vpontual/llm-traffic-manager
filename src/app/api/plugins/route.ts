@@ -1,3 +1,5 @@
+// GET /api/plugins -- return loaded plugin manifests
+
 import { NextResponse } from "next/server";
 import { getPluginRegistry } from "@/lib/plugins";
 

@@ -1,3 +1,5 @@
+// GET/PUT/DELETE /api/settings/telegram -- manage Telegram bot config
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { userTelegramConfigs } from "@/lib/schema";
@@ -15,7 +17,18 @@ export async function GET() {
       .where(eq(userTelegramConfigs.userId, user.id))
       .limit(1);
 
-    return NextResponse.json(config ?? null);
+    if (!config) return NextResponse.json(null);
+
+    // Mask bot token -- only show last 8 chars for identification
+    const masked = config.botToken.length > 8
+      ? "****" + config.botToken.slice(-8)
+      : "****";
+
+    return NextResponse.json({
+      chatId: config.chatId,
+      botToken: masked,
+      isEnabled: config.isEnabled,
+    });
   });
 }
 

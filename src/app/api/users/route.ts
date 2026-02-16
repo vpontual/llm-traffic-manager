@@ -1,3 +1,5 @@
+// GET/POST /api/users -- list users or create new user (admin only)
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";

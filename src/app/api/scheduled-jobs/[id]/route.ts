@@ -1,3 +1,5 @@
+// GET/PUT/DELETE /api/scheduled-jobs/:id -- manage individual scheduled job
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { scheduledJobs, servers } from "@/lib/schema";

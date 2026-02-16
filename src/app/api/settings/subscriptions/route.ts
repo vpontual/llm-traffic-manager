@@ -1,3 +1,5 @@
+// GET/PUT /api/settings/subscriptions -- manage server alert subscriptions
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { userServerSubscriptions, servers } from "@/lib/schema";

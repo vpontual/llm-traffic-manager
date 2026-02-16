@@ -1,3 +1,5 @@
+// GET /api/server-events -- return server lifecycle events (online/offline/reboot)
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { serverEvents, servers } from "@/lib/schema";

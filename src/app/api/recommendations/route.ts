@@ -1,3 +1,5 @@
+// GET /api/recommendations -- model placement recommendations based on usage
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { modelEvents, requestLogs, servers, serverSnapshots } from "@/lib/schema";

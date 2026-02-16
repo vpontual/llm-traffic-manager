@@ -1,3 +1,5 @@
+// POST /api/auth/setup -- create first admin user (initial setup only)
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";

@@ -1,3 +1,5 @@
+// GET /api/scheduled-jobs/suggestions -- find open time slots for new jobs
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { scheduledJobs } from "@/lib/schema";

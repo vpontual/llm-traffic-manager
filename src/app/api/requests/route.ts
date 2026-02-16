@@ -1,6 +1,8 @@
+// GET /api/requests -- return recent proxy request logs with source stats
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requestLogs, servers } from "@/lib/schema";
+import { requestLogs } from "@/lib/schema";
 import { desc, gte, eq, sql } from "drizzle-orm";
 import { getHoursWindow } from "@/lib/api/time-window";
 
