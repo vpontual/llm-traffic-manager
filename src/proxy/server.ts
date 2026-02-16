@@ -1,3 +1,6 @@
+// Ollama-compatible HTTP proxy -- routes requests to the fleet,
+// aggregates multi-server responses, and logs all traffic.
+
 import http from "node:http";
 import {
   routeModel,
@@ -21,6 +24,8 @@ const MAX_ROUTE_RETRIES = 3;
 // Debounce Telegram notifications per model (5 minutes)
 const modelNotFoundNotified = new Map<string, number>();
 const NOTIFY_DEBOUNCE_MS = 300000;
+
+// --- Endpoint classification ---
 
 // Endpoints where we extract a model field from the request body
 const MODEL_ENDPOINTS = new Set([
@@ -152,7 +157,7 @@ async function readBody(req: http.IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-function extractModel(body: Buffer, path: string): string | null {
+function extractModel(body: Buffer): string | null {
   try {
     const parsed = JSON.parse(body.toString());
     return parsed.model ?? parsed.name ?? null;
@@ -389,6 +394,8 @@ async function handleAggregateModels(
   res.end(body);
 }
 
+// --- Main request handler ---
+
 async function handleRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse
@@ -430,13 +437,13 @@ async function handleRequest(
   }
 
   // Read request body for POST/PUT/PATCH/DELETE
-  let body: Buffer = Buffer.alloc(0) as Buffer;
+  let body: Buffer = Buffer.alloc(0);
   if (method !== "GET" && method !== "HEAD") {
-    body = await readBody(req) as Buffer;
+    body = await readBody(req);
   }
 
   // Extract model from request body
-  const model = MODEL_ENDPOINTS.has(path) ? extractModel(body, path) : null;
+  const model = MODEL_ENDPOINTS.has(path) ? extractModel(body) : null;
 
   // Route the request — honor X-Ollama-Pin-Server header if present
   const pinHeader = req.headers["x-ollama-pin-server"];
@@ -533,6 +540,8 @@ async function handleRequest(
   }
   logRequest(source, userId, model, path, method, null, null, 404, Date.now() - startTime);
 }
+
+// --- Server startup ---
 
 async function main() {
   console.log("Running database migrations...");

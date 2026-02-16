@@ -1,3 +1,9 @@
+// Smart model router -- picks the best server for each request.
+//
+// Priority: model loaded in memory > model on disk (anti-churn) > most free VRAM.
+// Within each tier: highest-RAM server first, round-robin among ties.
+// Optimistic tracking bridges the gap between routing and poller confirmation.
+
 import { db } from "../lib/db";
 import { servers, serverSnapshots } from "../lib/schema";
 import { eq, desc } from "drizzle-orm";
