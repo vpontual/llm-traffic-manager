@@ -6,8 +6,11 @@
 
 A dashboard and intelligent proxy for managing a fleet of [Ollama](https://ollama.com) GPU servers. Monitor server status, route requests to the best available server, track usage analytics, and schedule model operations, all from a single interface.
 
-<!-- TODO: Add screenshot of dashboard here -->
-<!-- ![Dashboard](docs/screenshot.png) -->
+![Dashboard](docs/screenshot.png)
+
+The analytics page tracks request volume, success rates, latency percentiles, and usage breakdowns by model, source, and server over 24h/7d/30d windows.
+
+![Analytics](docs/analytics.png)
 
 ## Features
 
