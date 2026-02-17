@@ -30,7 +30,14 @@ The CI workflow (`.github/workflows/ci.yml`) runs:
 ```bash
 npm ci
 npm run check
+npm run coverage
 ```
+
+`coverage` enforces source-only thresholds (compiled `src/**` only):
+
+- Lines: `>= 90%`
+- Branches: `>= 85%`
+- Functions: `>= 95%`
 
 This ensures all PRs and pushes meet the same baseline.
 
@@ -63,6 +70,7 @@ npm run check
 npm run lint
 npm run typecheck
 npm test
+npm run coverage
 ```
 
 ### Smoke Tests
