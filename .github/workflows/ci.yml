@@ -33,4 +33,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -t ollama-fleet-ci .
+        run: docker build -t llmtm-ci .

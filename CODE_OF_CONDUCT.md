@@ -26,7 +26,7 @@ Severity is assessed on a case-by-case basis. Egregious behavior (threats, targe
 
 ## Reporting
 
-If you experience or witness unacceptable behavior, please report it privately using [GitHub's private reporting feature](https://github.com/vpontual/ollamaproxy/security/advisories/new). This ensures your report stays confidential.
+If you experience or witness unacceptable behavior, please report it privately using [GitHub's private reporting feature](https://github.com/vpontual/llm-traffic-manager/security/advisories/new). This ensures your report stays confidential.
 
 You can also reach maintainers via the contact links on their GitHub profiles.
 

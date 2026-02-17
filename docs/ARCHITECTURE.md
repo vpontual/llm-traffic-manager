@@ -1,6 +1,6 @@
 # Architecture
 
-Ollama Fleet Manager runs two parallel processes inside a single Docker container, backed by PostgreSQL.
+LLM Traffic Manager runs two parallel processes inside a single Docker container, backed by PostgreSQL.
 
 ## Components
 

@@ -17,7 +17,7 @@ export function middleware(request: NextRequest) {
   }
 
   // Allow static assets and Next.js internals
-  if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) {
+  if (pathname.startsWith("/_next") || pathname.startsWith("/favicon") || pathname === "/icon.svg" || pathname === "/logo.svg") {
     return NextResponse.next();
   }
 
@@ -34,5 +34,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|logo.svg).*)"],
 };

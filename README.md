@@ -1,6 +1,6 @@
-# Ollama Fleet Manager
+# LLM Traffic Manager
 
-[![CI](https://github.com/vpontual/ollamaproxy/actions/workflows/ci.yml/badge.svg)](https://github.com/vpontual/ollamaproxy/actions/workflows/ci.yml)
+[![CI](https://github.com/vpontual/llm-traffic-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/vpontual/llm-traffic-manager/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-22-green.svg)](https://nodejs.org/)
 
@@ -25,8 +25,8 @@ A dashboard and intelligent proxy for managing a fleet of [Ollama](https://ollam
 ## Quick Start
 
 ```bash
-git clone https://github.com/vpontual/ollamaproxy.git
-cd ollamaproxy
+git clone https://github.com/vpontual/llm-traffic-manager.git
+cd llm-traffic-manager
 cp .env.example .env
 # Edit .env with your Ollama server addresses (see Configuration below)
 docker compose up -d

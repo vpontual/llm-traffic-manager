@@ -85,6 +85,27 @@ export function NavBar() {
         <div className="flex items-center justify-between h-14">
           {/* Left: Brand + nav links */}
           <div className="flex items-center gap-1">
+            <Link href="/" className="flex items-center gap-2 mr-3 pr-3 border-r border-border/50">
+              <svg className="w-6 h-6 shrink-0 rounded" viewBox="0 0 512 512">
+                <defs>
+                  <linearGradient id="navbg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#3b82f6"/>
+                    <stop offset="1" stopColor="#1d4ed8"/>
+                  </linearGradient>
+                </defs>
+                <rect width="512" height="512" rx="96" fill="url(#navbg)"/>
+                <line x1="256" y1="256" x2="128" y2="128" stroke="white" strokeOpacity={0.4} strokeWidth="14" strokeLinecap="round"/>
+                <line x1="256" y1="256" x2="384" y2="128" stroke="white" strokeOpacity={0.4} strokeWidth="14" strokeLinecap="round"/>
+                <line x1="256" y1="256" x2="128" y2="384" stroke="white" strokeOpacity={0.4} strokeWidth="14" strokeLinecap="round"/>
+                <line x1="256" y1="256" x2="384" y2="384" stroke="white" strokeOpacity={0.4} strokeWidth="14" strokeLinecap="round"/>
+                <circle cx="128" cy="128" r="36" fill="white" fillOpacity={0.9}/>
+                <circle cx="384" cy="128" r="36" fill="white" fillOpacity={0.9}/>
+                <circle cx="128" cy="384" r="36" fill="white" fillOpacity={0.9}/>
+                <circle cx="384" cy="384" r="36" fill="white" fillOpacity={0.9}/>
+                <rect x="216" y="216" width="80" height="80" rx="14" fill="white" transform="rotate(45 256 256)"/>
+              </svg>
+              <span className="text-sm font-semibold text-text-primary hidden sm:inline">LLM Traffic Manager</span>
+            </Link>
             {NAV_ITEMS.map((item) => (
               <Link
                 key={item.href}

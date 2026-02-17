@@ -1,5 +1,5 @@
 {
-  "name": "ollama-fleet",
+  "name": "llm-traffic-manager",
   "version": "1.0.0",
   "private": true,
   "scripts": {

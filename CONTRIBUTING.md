@@ -1,4 +1,4 @@
-# Contributing to Ollama Fleet Manager
+# Contributing to LLM Traffic Manager
 
 Thanks for your interest in contributing! Here's how to get started.
 
@@ -76,7 +76,7 @@ Pre-commit hooks run `npm run check` automatically. They're installed when you r
 
 ## Reporting Bugs
 
-Use the [bug report template](https://github.com/vpontual/ollamaproxy/issues/new?template=bug_report.md) when filing issues. Include steps to reproduce, expected behavior, and your environment details.
+Use the [bug report template](https://github.com/vpontual/llm-traffic-manager/issues/new?template=bug_report.md) when filing issues. Include steps to reproduce, expected behavior, and your environment details.
 
 ## Security Issues
 
@@ -84,7 +84,7 @@ For security vulnerabilities, follow the [Security Policy](SECURITY.md) and repo
 
 ## Feature Requests
 
-Use the [feature request template](https://github.com/vpontual/ollamaproxy/issues/new?template=feature_request.md) to propose new features.
+Use the [feature request template](https://github.com/vpontual/llm-traffic-manager/issues/new?template=feature_request.md) to propose new features.
 
 ## License
 

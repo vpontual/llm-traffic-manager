@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Users - Ollama Fleet Manager",
+  title: "Users - LLM Traffic Manager",
 };
 
 export default function UsersLayout({ children }: { children: React.ReactNode }) {

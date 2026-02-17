@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Schedule - Ollama Fleet Manager",
+  title: "Schedule - LLM Traffic Manager",
 };
 
 export default function ScheduleLayout({ children }: { children: React.ReactNode }) {

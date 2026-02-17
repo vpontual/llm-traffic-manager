@@ -60,7 +60,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">
-            Ollama Fleet Manager
+            Dashboard
           </h1>
           <p className="text-sm text-text-muted mt-1">
             {totalOnline} server{totalOnline !== 1 ? "s" : ""} online
