@@ -18,6 +18,7 @@
     "src/lib/cron-utils.ts",
     "src/lib/types.ts",
     "src/lib/validations/**/*.ts",
+    "src/lib/validations/subscriptions.ts",
     "src/lib/format.ts",
     "src/lib/env.ts",
     "src/lib/crypto.ts",
