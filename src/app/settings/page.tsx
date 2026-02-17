@@ -414,6 +414,32 @@ export default function SettingsPage() {
           Save Subscriptions
         </button>
       </section>
+
+      {/* About */}
+      <section className="bg-surface-raised border border-border rounded-xl p-6 mt-6">
+        <h2 className="text-lg font-semibold text-text-primary mb-4">About</h2>
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-text-muted">Version</span>
+            <span className="text-text-primary font-mono">{process.env.APP_VERSION}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-text-muted">Source</span>
+            <a
+              href="https://github.com/vpontual/llm-traffic-manager"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent hover:underline"
+            >
+              github.com/vpontual/llm-traffic-manager
+            </a>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-text-muted">License</span>
+            <span className="text-text-primary">MIT</span>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
