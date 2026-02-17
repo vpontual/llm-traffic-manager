@@ -4,7 +4,6 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import Link from "next/link";
 import { useAuth } from "@/lib/use-auth";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -72,26 +71,18 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6">
+    <div id="main-content" className="max-w-4xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">User Management</h1>
           <p className="text-sm text-text-muted mt-1">{userList?.length ?? 0} users</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowCreate(!showCreate)}
-            className="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors"
-          >
-            {showCreate ? "Cancel" : "Add User"}
-          </button>
-          <Link
-            href="/"
-            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
-          >
-            Dashboard
-          </Link>
-        </div>
+        <button
+          onClick={() => setShowCreate(!showCreate)}
+          className="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors"
+        >
+          {showCreate ? "Cancel" : "Add User"}
+        </button>
       </div>
 
       {showCreate && (

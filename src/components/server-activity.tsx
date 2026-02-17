@@ -83,6 +83,7 @@ export function ServerActivity({ events }: { events: ServerEvent[] }) {
                       >
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${badge.dot}`}
+                          aria-hidden="true"
                         />
                         {badge.label}
                       </span>

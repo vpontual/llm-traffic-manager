@@ -70,6 +70,7 @@ export function JobCard({
         </div>
         <button
           onClick={() => onToggle?.(job)}
+          aria-label={job.isEnabled ? `Disable job ${job.name}` : `Enable job ${job.name}`}
           className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
             job.isEnabled
               ? "bg-success/20 text-success hover:bg-success/30"

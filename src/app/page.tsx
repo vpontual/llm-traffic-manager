@@ -5,20 +5,16 @@
 import useSWR from "swr";
 import { ServerGrid } from "@/components/server-grid";
 import { FleetSummary } from "@/components/fleet-summary";
+import { ServerGridSkeleton, FleetSummarySkeleton } from "@/components/skeletons";
 import { TimelineChart } from "@/components/timeline-chart";
 import { AvailableModels } from "@/components/available-models";
 import { ServerActivity } from "@/components/server-activity";
 import type { ServerState, ModelEvent, ServerEvent } from "@/lib/types";
 import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/use-auth";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function Dashboard() {
-  const { user } = useAuth();
-  const router = useRouter();
   const [timelineHours, setTimelineHours] = useState(24);
 
   const { data: servers, isLoading: serversLoading } = useSWR<ServerState[]>(
@@ -59,7 +55,7 @@ export default function Dashboard() {
     servers?.reduce((sum, s) => sum + s.loadedModels.length, 0) ?? 0;
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 py-6">
+    <div id="main-content" className="max-w-[1440px] mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -72,65 +68,22 @@ export default function Dashboard() {
             {totalModels} model{totalModels !== 1 ? "s" : ""} loaded
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {servers && (
-            <span className="text-xs text-text-muted">
-              Updated {secondsAgo < 2 ? "just now" : `${secondsAgo}s ago`}
-            </span>
-          )}
-          <Link
-            href="/history"
-            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
-          >
-            History
-          </Link>
-          <Link
-            href="/analytics"
-            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
-          >
-            Analytics
-          </Link>
-          <Link
-            href="/schedule"
-            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
-          >
-            Schedule
-          </Link>
-          <button
-            onClick={() => fetch("/api/poll", { method: "POST" })}
-            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
-          >
-            Refresh
-          </button>
-          <Link
-            href="/settings"
-            className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
-          >
-            Settings
-          </Link>
-          {user?.isAdmin && (
-            <Link
-              href="/admin/users"
-              className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
-            >
-              Users
-            </Link>
-          )}
-          <button
-            onClick={() => fetch("/api/auth/logout", { method: "POST" }).then(() => router.push("/login"))}
-            className="px-3 py-1.5 text-sm bg-surface-raised border border-red-800/50 rounded-lg text-red-400 hover:text-red-300 hover:border-red-700 transition-colors"
-          >
-            Logout
-          </button>
-        </div>
+        {servers && (
+          <span className="text-xs text-text-muted">
+            Updated {secondsAgo < 2 ? "just now" : `${secondsAgo}s ago`}
+          </span>
+        )}
       </div>
 
       {/* Loading state */}
-      {serversLoading && (
-        <div className="text-center py-20 text-text-muted">
-          Connecting to servers...
-        </div>
-      )}
+      <div aria-live="polite">
+        {serversLoading && (
+          <div className="space-y-6">
+            <ServerGridSkeleton />
+            <FleetSummarySkeleton />
+          </div>
+        )}
+      </div>
 
       {/* Server cards */}
       {servers && (

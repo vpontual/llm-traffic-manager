@@ -4,7 +4,6 @@
 
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
-import Link from "next/link";
 import type { ScheduledJob, ScheduledExecution, ConflictGroup } from "@/lib/types";
 import { ScheduleTimeline } from "@/components/schedule-timeline";
 import { JobCard } from "@/components/job-card";
@@ -154,20 +153,12 @@ export default function SchedulePage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
+    <div id="main-content" className="max-w-7xl mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <Link
-            href="/"
-            className="text-text-muted hover:text-text-secondary transition-colors"
-          >
-            &larr; Dashboard
-          </Link>
-          <h1 className="text-2xl font-bold text-text-primary mt-2">
-            Scheduled Jobs
-          </h1>
-        </div>
+        <h1 className="text-2xl font-bold text-text-primary">
+          Scheduled Jobs
+        </h1>
         <div className="flex items-center gap-3">
           <div className="flex gap-1">
             {TIME_RANGES.map((range) => (
@@ -210,6 +201,7 @@ export default function SchedulePage() {
             <button
               onClick={() => setDiscoverResult(null)}
               className="text-text-muted hover:text-text-secondary"
+              aria-label="Dismiss discovery results"
             >
               &times;
             </button>
@@ -246,9 +238,14 @@ export default function SchedulePage() {
 
       {/* Form Modal */}
       {(showForm || editingJob) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="job-form-title"
+        >
           <div className="bg-surface-raised border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold text-text-primary mb-4">
+            <h2 id="job-form-title" className="text-lg font-semibold text-text-primary mb-4">
               {editingJob ? "Edit Job" : "Create Job"}
             </h2>
             <JobForm
@@ -294,7 +291,7 @@ export default function SchedulePage() {
           All Jobs ({jobs?.length ?? 0})
         </h2>
         {jobsLoading ? (
-          <div className="bg-surface-raised border border-border rounded-xl p-6 text-center text-text-muted">
+          <div className="bg-surface-raised border border-border rounded-xl p-6 text-center text-text-muted" aria-live="polite">
             Loading...
           </div>
         ) : !jobs || jobs.length === 0 ? (

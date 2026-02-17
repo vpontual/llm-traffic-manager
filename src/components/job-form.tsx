@@ -118,11 +118,13 @@ export function JobForm({ job, models, servers, onSubmit, onCancel }: JobFormPro
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <div className="px-3 py-2 bg-danger/10 border border-danger/20 rounded-lg text-sm text-danger">
-          {error}
-        </div>
-      )}
+      <div aria-live="assertive">
+        {error && (
+          <div className="px-3 py-2 bg-danger/10 border border-danger/20 rounded-lg text-sm text-danger">
+            {error}
+          </div>
+        )}
+      </div>
 
       {/* Name */}
       <div>

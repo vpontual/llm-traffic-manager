@@ -21,6 +21,8 @@ export function ServerGrid({ servers }: { servers: ServerState[] }) {
       <div className="flex justify-end mb-3">
         <button
           onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          aria-label={expanded ? "Collapse all server details" : "Expand all server details"}
           className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-surface-raised border border-border rounded-lg text-text-muted hover:text-text-secondary hover:border-accent transition-colors"
         >
           <svg

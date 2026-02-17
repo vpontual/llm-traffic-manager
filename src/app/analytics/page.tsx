@@ -4,7 +4,7 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import Link from "next/link";
+import { StatBoxesSkeleton, TableSkeleton } from "@/components/skeletons";
 import {
   BarChart,
   Bar,
@@ -142,18 +142,10 @@ export default function AnalyticsPage() {
   );
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 py-6">
+    <div id="main-content" className="max-w-[1440px] mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/"
-            className="text-text-muted hover:text-text-primary transition-colors"
-          >
-            &larr;
-          </Link>
-          <h1 className="text-2xl font-bold text-text-primary">Analytics</h1>
-        </div>
+        <h1 className="text-2xl font-bold text-text-primary">Analytics</h1>
         <div className="flex items-center gap-2">
           {TIME_RANGES.map((r) => (
             <button
@@ -172,11 +164,14 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Loading */}
-      {isLoading && (
-        <div className="text-center py-20 text-text-muted">
-          Loading analytics...
-        </div>
-      )}
+      <div aria-live="polite">
+        {isLoading && (
+          <div className="space-y-8">
+            <StatBoxesSkeleton />
+            <TableSkeleton rows={6} cols={2} />
+          </div>
+        )}
+      </div>
 
       {/* Empty state */}
       {data && data.summary.totalRequests === 0 && (

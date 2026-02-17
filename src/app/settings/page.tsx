@@ -4,7 +4,6 @@
 
 import { useState, useEffect } from "react";
 import useSWR from "swr";
-import Link from "next/link";
 import { useAuth } from "@/lib/use-auth";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -184,15 +183,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6">
-      <div className="flex items-center justify-between mb-6">
+    <div id="main-content" className="max-w-3xl mx-auto px-4 py-6">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-text-primary">Settings</h1>
-        <Link
-          href="/"
-          className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
-        >
-          Dashboard
-        </Link>
       </div>
 
       {/* Account Section */}
@@ -256,11 +249,13 @@ export default function SettingsPage() {
                 required
               />
             </div>
-            {passwordMsg && (
-              <p className={`text-sm ${passwordMsg.includes("updated") ? "text-green-400" : "text-red-400"}`}>
-                {passwordMsg}
-              </p>
-            )}
+            <div aria-live="polite">
+              {passwordMsg && (
+                <p className={`text-sm ${passwordMsg.includes("updated") ? "text-green-400" : "text-red-400"}`}>
+                  {passwordMsg}
+                </p>
+              )}
+            </div>
             <button
               type="submit"
               className="px-4 py-2 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors"
@@ -311,11 +306,13 @@ export default function SettingsPage() {
             </label>
           </div>
 
-          {tgMsg && (
-            <p className={`text-sm ${tgMsg.includes("Saved") ? "text-green-400" : "text-red-400"}`}>
-              {tgMsg}
-            </p>
-          )}
+          <div aria-live="polite">
+            {tgMsg && (
+              <p className={`text-sm ${tgMsg.includes("Saved") ? "text-green-400" : "text-red-400"}`}>
+                {tgMsg}
+              </p>
+            )}
+          </div>
 
           <div className="flex gap-2">
             <button
@@ -402,11 +399,13 @@ export default function SettingsPage() {
           </table>
         </div>
 
-        {subsMsg && (
-          <p className={`text-sm mt-3 ${subsMsg.includes("saved") ? "text-green-400" : "text-red-400"}`}>
-            {subsMsg}
-          </p>
-        )}
+        <div aria-live="polite">
+          {subsMsg && (
+            <p className={`text-sm mt-3 ${subsMsg.includes("saved") ? "text-green-400" : "text-red-400"}`}>
+              {subsMsg}
+            </p>
+          )}
+        </div>
 
         <button
           onClick={handleSaveSubs}

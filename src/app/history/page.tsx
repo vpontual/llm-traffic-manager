@@ -5,7 +5,6 @@
 import useSWR from "swr";
 import type { ModelEvent } from "@/lib/types";
 import { useState } from "react";
-import Link from "next/link";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -98,22 +97,12 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 py-6">
+    <div id="main-content" className="max-w-[1440px] mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="text-text-muted hover:text-text-secondary transition-colors"
-            >
-              &larr; Dashboard
-            </Link>
-          </div>
-          <h1 className="text-2xl font-bold text-text-primary mt-2">
-            Usage History
-          </h1>
-        </div>
+        <h1 className="text-2xl font-bold text-text-primary">
+          Usage History
+        </h1>
         <div className="flex gap-1">
           {TIME_RANGES.map((range) => (
             <button
@@ -351,6 +340,7 @@ export default function HistoryPage() {
                                 ? "bg-success"
                                 : "bg-danger"
                             }`}
+                            aria-hidden="true"
                           />
                           {event.eventType}
                         </span>

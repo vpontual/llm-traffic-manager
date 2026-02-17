@@ -71,6 +71,8 @@ export function ServerCard({
             className={`inline-block w-2 h-2 rounded-full shrink-0 ${
               server.isOnline ? "bg-success" : "bg-danger"
             }`}
+            role="img"
+            aria-label={server.isOnline ? "Online" : "Offline"}
           />
           <h2 className="text-sm font-semibold text-text-primary truncate">
             {server.name}
@@ -92,7 +94,7 @@ export function ServerCard({
             {server.loadedModels.map((model) => (
               <li key={model.name} className="flex items-center gap-1.5 text-xs">
                 {isPinned(model.expires_at) && (
-                  <span className="text-accent" title="Pinned">&bull;</span>
+                  <span className="text-accent" title="Pinned" role="img" aria-label="Pinned model">&bull;</span>
                 )}
                 <span className="text-text-primary font-mono truncate">
                   {model.name}
