@@ -26,6 +26,9 @@ jobs:
       - name: Lint, typecheck, and unit tests
         run: npm run check
 
+      - name: Coverage gate (source only)
+        run: npm run coverage
+
   docker-build:
     runs-on: ubuntu-latest
     steps:

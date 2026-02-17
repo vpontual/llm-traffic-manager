@@ -58,40 +58,27 @@ const suggestionsSchema = z.object({
   hours: z.string().optional().nullable(),
 });
 
-function parsePreferredServerId(value: unknown): number | null {
-  const parsedNumber = z.number().int().positive().safeParse(value);
-  if (parsedNumber.success) {
-    return parsedNumber.data;
+function parseOptionalPositiveInteger(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+    return value;
   }
 
-  const parsedString = z
-    .string()
-    .transform((raw) => Number.parseInt(raw, 10))
-    .pipe(z.number().int().positive())
-    .safeParse(value);
-  if (parsedString.success) {
-    return parsedString.data;
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
   }
 
   return null;
 }
 
+function parsePreferredServerId(value: unknown): number | null {
+  return parseOptionalPositiveInteger(value);
+}
+
 function parseExpectedDurationMs(value: unknown): number {
-  const parsedNumber = z.number().int().positive().safeParse(value);
-  if (parsedNumber.success) {
-    return parsedNumber.data;
-  }
-
-  const parsedString = z
-    .string()
-    .transform((raw) => Number.parseInt(raw, 10))
-    .pipe(z.number().int().positive())
-    .safeParse(value);
-  if (parsedString.success) {
-    return parsedString.data;
-  }
-
-  return 60000;
+  return parseOptionalPositiveInteger(value) ?? 60000;
 }
 
 export function validateCreateScheduledJobInput(
