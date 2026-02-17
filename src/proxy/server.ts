@@ -9,6 +9,8 @@ import {
   resolveServerByName,
   clearOptimisticLoad,
   getRecommendedPullServer,
+  markRequestStart,
+  markRequestEnd,
 } from "./router";
 import { db } from "../lib/db";
 import { requestLogs, users } from "../lib/schema";
@@ -46,6 +48,15 @@ const MODEL_ENDPOINTS = new Set([
 
 // Endpoints where we aggregate responses from all servers
 const AGGREGATE_ENDPOINTS = new Set(["/api/tags", "/api/ps", "/v1/models"]);
+
+// Generation endpoints: slow operations where in-flight tracking matters.
+// When a server is busy with one of these, the router prefers other backends.
+const GENERATION_ENDPOINTS = new Set([
+  "/api/generate",
+  "/api/chat",
+  "/v1/chat/completions",
+  "/v1/completions",
+]);
 
 // Endpoints where retry-on-model-not-found makes sense (read operations).
 // Write operations (pull, create, copy, delete) should NOT retry because they route
@@ -479,7 +490,15 @@ async function handleRequest(
     // On the last attempt, don't allow retry. Let the response flow to the
     // client even if it's an error, so they get a meaningful message.
     const allowRetry = canRetry && attempt < MAX_ROUTE_RETRIES;
-    const result = await proxyRequest(route.host, req, res, body, allowRetry);
+    const trackBusy = GENERATION_ENDPOINTS.has(path);
+    if (trackBusy) markRequestStart(route.serverId);
+
+    let result: ProxyResult;
+    try {
+      result = await proxyRequest(route.host, req, res, body, allowRetry);
+    } finally {
+      if (trackBusy) markRequestEnd(route.serverId);
+    }
 
     if (result.retryable) {
       console.log(

@@ -218,3 +218,89 @@ test("selectRoute prefers loaded over available", () => {
   assert.equal(result.server.name, "nano1");
   assert.equal(result.reason, "model_loaded");
 });
+
+// --- busy-aware routing ---
+
+test("selectRoute skips busy loaded server when model available elsewhere", () => {
+  const dgxLoaded = makeServer({
+    ...dgx,
+    loadedModels: [loadedModel("llama3")],
+  });
+  const agxAvail = makeServer({
+    ...agx,
+    availableModels: [availableModel("llama3")],
+  });
+  const result = selectRoute({
+    onlineServers: [dgxLoaded, agxAvail],
+    modelName: "llama3",
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+    busyServerIds: [dgx.id],
+  });
+  assert.ok(result);
+  assert.equal(result.server.name, "agx");
+  assert.equal(result.reason, "model_available_busy_redirect");
+});
+
+test("selectRoute falls back to busy loaded server when no alternatives", () => {
+  const dgxLoaded = makeServer({
+    ...dgx,
+    loadedModels: [loadedModel("llama3")],
+  });
+  const result = selectRoute({
+    onlineServers: [dgxLoaded, nano1],
+    modelName: "llama3",
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+    busyServerIds: [dgx.id],
+  });
+  assert.ok(result);
+  assert.equal(result.server.name, "dgx");
+  assert.equal(result.reason, "model_loaded_busy");
+});
+
+test("selectRoute unaffected when busyServerIds is empty", () => {
+  const dgxLoaded = makeServer({
+    ...dgx,
+    loadedModels: [loadedModel("llama3")],
+  });
+  const agxAvail = makeServer({
+    ...agx,
+    availableModels: [availableModel("llama3")],
+  });
+  const result = selectRoute({
+    onlineServers: [dgxLoaded, agxAvail],
+    modelName: "llama3",
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+    busyServerIds: [],
+  });
+  assert.ok(result);
+  assert.equal(result.server.name, "dgx");
+  assert.equal(result.reason, "model_loaded");
+});
+
+test("selectRoute prefers free loaded server over busy loaded server", () => {
+  const dgxLoaded = makeServer({
+    ...dgx,
+    loadedModels: [loadedModel("llama3")],
+  });
+  const agxLoaded = makeServer({
+    ...agx,
+    loadedModels: [loadedModel("llama3")],
+  });
+  const result = selectRoute({
+    onlineServers: [dgxLoaded, agxLoaded],
+    modelName: "llama3",
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+    busyServerIds: [dgx.id],
+  });
+  assert.ok(result);
+  assert.equal(result.server.name, "agx");
+  assert.equal(result.reason, "model_loaded");
+});

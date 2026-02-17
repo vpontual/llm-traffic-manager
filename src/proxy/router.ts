@@ -30,6 +30,28 @@ const lastRoutedServer = new Map<string, number>();
 const optimisticLoads = new Map<string, { serverId: number; timestamp: number }>();
 const OPTIMISTIC_TTL_MS = 30000; // 30s, enough for load + poller to catch up
 
+// In-flight generation request tracking: count of active generation requests
+// per server. Used to avoid piling requests onto a busy backend when another
+// server has the model on disk and could load it in seconds.
+const inFlightRequests = new Map<number, number>();
+
+export function markRequestStart(serverId: number): void {
+  inFlightRequests.set(serverId, (inFlightRequests.get(serverId) ?? 0) + 1);
+}
+
+export function markRequestEnd(serverId: number): void {
+  const count = inFlightRequests.get(serverId) ?? 0;
+  if (count <= 1) {
+    inFlightRequests.delete(serverId);
+  } else {
+    inFlightRequests.set(serverId, count - 1);
+  }
+}
+
+function getBusyServerIds(): number[] {
+  return [...inFlightRequests.keys()];
+}
+
 export async function refreshServerStates(): Promise<ServerSnapshot[]> {
   const now = Date.now();
   if (now - lastRefresh < CACHE_TTL_MS && cachedStates.length > 0) {
@@ -123,6 +145,7 @@ export async function routeModel(
     optimisticServerId,
     lastRoutedServerId: lastRoutedServer.get(modelName) ?? null,
     roundRobinCounter,
+    busyServerIds: getBusyServerIds(),
   });
 
   if (!result) return null;
