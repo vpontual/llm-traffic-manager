@@ -79,10 +79,10 @@ export default function Dashboard() {
             </span>
           )}
           <Link
-            href="/schedule"
+            href="/history"
             className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
           >
-            Schedule
+            History
           </Link>
           <Link
             href="/analytics"
@@ -91,10 +91,10 @@ export default function Dashboard() {
             Analytics
           </Link>
           <Link
-            href="/history"
+            href="/schedule"
             className="px-3 py-1.5 text-sm bg-surface-raised border border-border rounded-lg text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
           >
-            History
+            Schedule
           </Link>
           <button
             onClick={() => fetch("/api/poll", { method: "POST" })}
