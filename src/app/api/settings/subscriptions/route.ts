@@ -3,8 +3,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { userServerSubscriptions, servers } from "@/lib/schema";
-import { withAuth } from "@/lib/api/route-helpers";
+import { jsonError, withAuth } from "@/lib/api/route-helpers";
 import { eq } from "drizzle-orm";
+import { validateSubscriptionsInput } from "@/lib/validations/subscriptions";
 
 export const dynamic = "force-dynamic";
 
@@ -29,12 +30,11 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   return withAuth(async (user) => {
-    const subscriptions: Array<{
-      serverId: number;
-      notifyOffline: boolean;
-      notifyOnline: boolean;
-      notifyReboot: boolean;
-    }> = await request.json();
+    const validation = validateSubscriptionsInput(await request.json());
+    if (!validation.ok) {
+      return jsonError(validation.error, 400);
+    }
+    const subscriptions = validation.data;
 
     // Delete all existing, then bulk insert
     await db.delete(userServerSubscriptions).where(eq(userServerSubscriptions.userId, user.id));

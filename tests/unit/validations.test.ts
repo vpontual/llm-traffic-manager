@@ -17,6 +17,7 @@ import {
   validatePositiveInt,
 } from "../../src/lib/validations/numbers";
 import { validateSystemMetricsServerId } from "../../src/lib/validations/system-metrics";
+import { validateSubscriptionsInput } from "../../src/lib/validations/subscriptions";
 import { validateUserUpdateInput } from "../../src/lib/validations/users";
 
 test("validateLoginInput normalizes username", () => {
@@ -142,4 +143,26 @@ test("validateUserUpdateInput validates payload shape", () => {
     isAdmin: true,
   });
   assert.equal(valid.ok, true);
+});
+
+test("validateSubscriptionsInput validates subscription array payload", () => {
+  const valid = validateSubscriptionsInput([
+    {
+      serverId: 1,
+      notifyOffline: true,
+      notifyOnline: false,
+      notifyReboot: true,
+    },
+  ]);
+  assert.equal(valid.ok, true);
+
+  const invalid = validateSubscriptionsInput([
+    {
+      serverId: "1",
+      notifyOffline: true,
+      notifyOnline: false,
+      notifyReboot: true,
+    },
+  ]);
+  assert.equal(invalid.ok, false);
 });

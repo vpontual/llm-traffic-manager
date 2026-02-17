@@ -205,6 +205,25 @@ interface ProxyResult {
   retryable: boolean;
 }
 
+function resolveProxyError(
+  error: unknown,
+  res: http.ServerResponse,
+  allowRetry: boolean,
+  resolve: (result: ProxyResult) => void
+): void {
+  if (allowRetry) {
+    resolve({ statusCode: 502, retryable: true });
+    return;
+  }
+
+  const message = error instanceof Error ? error.message : "unknown proxy error";
+  if (!res.headersSent) {
+    res.writeHead(502);
+    res.end(JSON.stringify({ error: `proxy error: ${message}` }));
+  }
+  resolve({ statusCode: 502, retryable: false });
+}
+
 /**
  * Proxy a request to a target Ollama server, streaming the response back.
  *
@@ -255,17 +274,7 @@ function proxyRequest(
             resolve({ statusCode, retryable: false });
           }
         });
-        proxyRes.on("error", (err) => {
-          if (allowRetry) {
-            resolve({ statusCode: 502, retryable: true });
-            return;
-          }
-          if (!res.headersSent) {
-            res.writeHead(502);
-            res.end(JSON.stringify({ error: `proxy error: ${err.message}` }));
-          }
-          resolve({ statusCode: 502, retryable: false });
-        });
+        proxyRes.on("error", (err) => resolveProxyError(err, res, allowRetry, resolve));
         return;
       }
 
@@ -273,31 +282,10 @@ function proxyRequest(
       res.writeHead(statusCode, proxyRes.headers);
       proxyRes.pipe(res);
       proxyRes.on("end", () => resolve({ statusCode, retryable: false }));
-      proxyRes.on("error", (err) => {
-        if (allowRetry) {
-          resolve({ statusCode: 502, retryable: true });
-          return;
-        }
-        if (!res.headersSent) {
-          res.writeHead(502);
-          res.end(JSON.stringify({ error: `proxy error: ${err.message}` }));
-        }
-        resolve({ statusCode: 502, retryable: false });
-      });
+      proxyRes.on("error", (err) => resolveProxyError(err, res, allowRetry, resolve));
     });
 
-    proxyReq.on("error", (err) => {
-      if (allowRetry) {
-        // Connection error in retry mode, signal retry
-        resolve({ statusCode: 502, retryable: true });
-      } else {
-        if (!res.headersSent) {
-          res.writeHead(502);
-          res.end(JSON.stringify({ error: `proxy error: ${err.message}` }));
-        }
-        resolve({ statusCode: 502, retryable: false });
-      }
-    });
+    proxyReq.on("error", (err) => resolveProxyError(err, res, allowRetry, resolve));
 
     proxyReq.on("timeout", () => {
       proxyReq.destroy();

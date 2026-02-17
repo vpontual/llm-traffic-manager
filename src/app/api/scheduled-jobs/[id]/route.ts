@@ -19,16 +19,26 @@ import { validateNumericId } from "@/lib/validations/numbers";
 
 export const dynamic = "force-dynamic";
 
+async function resolveJobId(
+  params: Promise<{ id: string }>
+): Promise<{ ok: true; jobId: number } | { ok: false; response: NextResponse }> {
+  const { id } = await params;
+  const jobIdValidation = validateNumericId(id, "job ID");
+  if (!jobIdValidation.ok) {
+    return { ok: false, response: jsonError(jobIdValidation.error, 400) };
+  }
+  return { ok: true, jobId: jobIdValidation.data };
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const jobIdValidation = validateNumericId(id, "job ID");
-  if (!jobIdValidation.ok) {
-    return jsonError(jobIdValidation.error, 400);
+  const jobIdResult = await resolveJobId(params);
+  if (!jobIdResult.ok) {
+    return jobIdResult.response;
   }
-  const jobId = jobIdValidation.data;
+  const jobId = jobIdResult.jobId;
 
   const [row] = await db
     .select(scheduledJobWithServerSelect)
@@ -51,12 +61,11 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
-    const jobIdValidation = validateNumericId(id, "job ID");
-    if (!jobIdValidation.ok) {
-      return jsonError(jobIdValidation.error, 400);
+    const jobIdResult = await resolveJobId(params);
+    if (!jobIdResult.ok) {
+      return jobIdResult.response;
     }
-    const jobId = jobIdValidation.data;
+    const jobId = jobIdResult.jobId;
 
     const updatesValidation = validateScheduledJobUpdates(await request.json());
     if (!updatesValidation.ok) {
@@ -98,12 +107,11 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const jobIdValidation = validateNumericId(id, "job ID");
-  if (!jobIdValidation.ok) {
-    return jsonError(jobIdValidation.error, 400);
+  const jobIdResult = await resolveJobId(params);
+  if (!jobIdResult.ok) {
+    return jobIdResult.response;
   }
-  const jobId = jobIdValidation.data;
+  const jobId = jobIdResult.jobId;
 
   const [deleted] = await db
     .delete(scheduledJobs)
