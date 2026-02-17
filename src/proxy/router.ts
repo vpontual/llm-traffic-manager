@@ -9,6 +9,7 @@ import { servers, serverSnapshots } from "../lib/schema";
 import { eq, desc } from "drizzle-orm";
 import type { OllamaRunningModel, OllamaAvailableModel } from "../lib/types";
 import { selectRoute, freeVram, type ServerSnapshot } from "./route-logic";
+import { BusyRequestTracker } from "./busy-tracker";
 
 
 // In-memory cache of server states, refreshed periodically from poller DB data
@@ -30,26 +31,18 @@ const lastRoutedServer = new Map<string, number>();
 const optimisticLoads = new Map<string, { serverId: number; timestamp: number }>();
 const OPTIMISTIC_TTL_MS = 30000; // 30s, enough for load + poller to catch up
 
-// In-flight generation request tracking: count of active generation requests
-// per server. Used to avoid piling requests onto a busy backend when another
-// server has the model on disk and could load it in seconds.
-const inFlightRequests = new Map<number, number>();
+const busyTracker = new BusyRequestTracker();
 
 export function markRequestStart(serverId: number): void {
-  inFlightRequests.set(serverId, (inFlightRequests.get(serverId) ?? 0) + 1);
+  busyTracker.markStart(serverId);
 }
 
 export function markRequestEnd(serverId: number): void {
-  const count = inFlightRequests.get(serverId) ?? 0;
-  if (count <= 1) {
-    inFlightRequests.delete(serverId);
-  } else {
-    inFlightRequests.set(serverId, count - 1);
-  }
+  busyTracker.markEnd(serverId);
 }
 
 function getBusyServerIds(): number[] {
-  return [...inFlightRequests.keys()];
+  return busyTracker.getBusyServerIds();
 }
 
 export async function refreshServerStates(): Promise<ServerSnapshot[]> {

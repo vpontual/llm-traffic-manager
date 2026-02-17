@@ -21,6 +21,7 @@
     "src/lib/format.ts",
     "src/lib/env.ts",
     "src/lib/crypto.ts",
+    "src/proxy/busy-tracker.ts",
     "src/proxy/route-logic.ts",
     "src/proxy/parse.ts",
     "src/lib/api/time-window.ts",
