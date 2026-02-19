@@ -27,7 +27,9 @@
     "src/proxy/parse.ts",
     "src/lib/api/time-window.ts",
     "src/lib/permissions.ts",
-    "src/lib/alert-rules.ts"
+    "src/lib/alert-rules.ts",
+    "src/lib/registry-check.ts",
+    "src/lib/oversized-models.ts"
   ],
   "exclude": [
     "node_modules",
