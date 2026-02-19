@@ -1,5 +1,6 @@
 "use client";
 
+import { mutate } from "swr";
 import type { ServerState } from "@/lib/types";
 import { VramBar } from "./vram-bar";
 
@@ -63,20 +64,30 @@ export function ServerCard({
     server.ollamaVersion !== latestVersion;
 
   return (
-    <div className="bg-surface-raised border border-border rounded-xl p-4 transition-all duration-200">
+    <div className={`bg-surface-raised border border-border rounded-xl p-4 transition-all duration-200 ${server.isDisabled ? "opacity-60" : ""}`}>
       {/* Header — always visible */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 min-w-0">
           <span
             className={`inline-block w-2 h-2 rounded-full shrink-0 ${
-              server.isOnline ? "bg-success" : "bg-danger"
+              server.isDisabled ? "bg-warning" : server.isOnline ? "bg-success" : "bg-danger"
             }`}
             role="img"
-            aria-label={server.isOnline ? "Online" : "Offline"}
+            aria-label={server.isDisabled ? "Disabled" : server.isOnline ? "Online" : "Offline"}
           />
           <h2 className="text-sm font-semibold text-text-primary truncate">
             {server.name}
           </h2>
+          {server.backendType !== "ollama" && (
+            <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider rounded bg-accent/15 text-accent">
+              {server.backendType}
+            </span>
+          )}
+          {server.isDisabled && (
+            <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider rounded bg-warning/15 text-warning">
+              maintenance
+            </span>
+          )}
         </div>
       </div>
 
@@ -124,6 +135,23 @@ export function ServerCard({
                 </span>
               )}
             </div>
+            <button
+              onClick={async () => {
+                await fetch(`/api/servers/${server.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ isDisabled: !server.isDisabled }),
+                });
+                mutate("/api/servers");
+              }}
+              className={`mt-2 px-3 py-1 text-xs rounded-lg border transition-colors ${
+                server.isDisabled
+                  ? "border-success/30 text-success hover:bg-success/10"
+                  : "border-warning/30 text-warning hover:bg-warning/10"
+              }`}
+            >
+              {server.isDisabled ? "Reconnect" : "Disconnect"}
+            </button>
           </div>
 
           {/* System metrics */}

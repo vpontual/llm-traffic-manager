@@ -12,6 +12,9 @@ export interface ServerSnapshot {
   loadedModels: OllamaRunningModel[];
   availableModels: OllamaAvailableModel[];
   totalVramUsed: number;
+  backendType: "ollama" | "vllm" | "generic";
+  maxConcurrent: number;
+  isDisabled: boolean;
 }
 
 /** Calculate free VRAM in bytes */
@@ -39,6 +42,8 @@ export interface SelectRouteParams {
   roundRobinCounter: number;
   /** Server IDs currently processing a generation request. */
   busyServerIds?: number[];
+  /** Request endpoint path (e.g. "/api/chat", "/v1/chat/completions"). */
+  endpointPath?: string | null;
 }
 
 export interface SelectRouteResult {
@@ -56,8 +61,16 @@ export interface SelectRouteResult {
  * 3. Fallback: server with most free VRAM
  */
 export function selectRoute(params: SelectRouteParams): SelectRouteResult | null {
-  const { onlineServers, modelName, optimisticServerId, lastRoutedServerId, busyServerIds = [] } = params;
+  const { modelName, optimisticServerId, lastRoutedServerId, busyServerIds = [], endpointPath } = params;
   let counter = params.roundRobinCounter;
+
+  // Filter servers by endpoint compatibility:
+  // /api/* endpoints only work with Ollama backends
+  // /v1/* endpoints and null path work with all backends
+  let onlineServers = params.onlineServers;
+  if (endpointPath && endpointPath.startsWith("/api/")) {
+    onlineServers = onlineServers.filter((s) => s.backendType === "ollama");
+  }
 
   if (onlineServers.length === 0) return null;
 
@@ -74,6 +87,16 @@ export function selectRoute(params: SelectRouteParams): SelectRouteResult | null
   if (withModelLoaded.length > 0) {
     const loadedAndFree = withModelLoaded.filter((s) => !busySet.has(s.id));
     if (loadedAndFree.length > 0) {
+      // Sticky affinity: if lastRouted server is in the loaded+free set, prefer it.
+      // This keeps requests pinned to one server when multiple have the model loaded,
+      // preventing the model from expiring on the less-used server due to idle timeout.
+      if (lastRoutedServerId != null) {
+        const sticky = loadedAndFree.find((s) => s.id === lastRoutedServerId);
+        if (sticky) {
+          return { server: sticky, reason: "model_loaded_sticky", roundRobinCounter: counter };
+        }
+      }
+
       const { server, nextCounter } = pickByPriority(loadedAndFree, counter);
       return { server, reason: "model_loaded", roundRobinCounter: nextCounter };
     }

@@ -309,10 +309,11 @@ async function handleAggregateTags(
   res: http.ServerResponse
 ): Promise<void> {
   const onlineServers = await getAllOnlineServers();
+  const ollamaServers = onlineServers.filter((s) => s.backendType === "ollama");
   const allModels = new Map<string, unknown>();
 
   await Promise.all(
-    onlineServers.map(async (server) => {
+    ollamaServers.map(async (server) => {
       try {
         const resp = await fetch(`http://${server.host}/api/tags`);
         const data = await resp.json();
@@ -344,10 +345,11 @@ async function handleAggregatePs(
   res: http.ServerResponse
 ): Promise<void> {
   const onlineServers = await getAllOnlineServers();
+  const ollamaServers = onlineServers.filter((s) => s.backendType === "ollama");
   const allModels: unknown[] = [];
 
   await Promise.all(
-    onlineServers.map(async (server) => {
+    ollamaServers.map(async (server) => {
       try {
         const resp = await fetch(`http://${server.host}/api/ps`);
         const data = await resp.json();
@@ -473,7 +475,7 @@ async function handleRequest(
       route = await resolveServerByName(pinServerName);
     }
     if (!route && model) {
-      route = await routeModel(model, excludeServerIds);
+      route = await routeModel(model, excludeServerIds, path);
     }
     // If routeModel returned null after excluding servers, all candidates
     // are exhausted, so don't fall back to pickAnyServer (it ignores exclusions)

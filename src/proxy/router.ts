@@ -42,7 +42,12 @@ export function markRequestEnd(serverId: number): void {
 }
 
 function getBusyServerIds(): number[] {
-  return busyTracker.getBusyServerIds();
+  // Build per-server concurrency limits from cached state
+  const limits = new Map<number, number>();
+  for (const s of cachedStates) {
+    limits.set(s.id, s.maxConcurrent);
+  }
+  return busyTracker.getFullServerIds(limits);
 }
 
 export async function refreshServerStates(): Promise<ServerSnapshot[]> {
@@ -71,6 +76,9 @@ export async function refreshServerStates(): Promise<ServerSnapshot[]> {
       loadedModels: (latest?.loadedModels ?? []) as OllamaRunningModel[],
       availableModels: (latest?.availableModels ?? []) as OllamaAvailableModel[],
       totalVramUsed: latest?.totalVramUsed ?? 0,
+      backendType: (server.backendType as "ollama" | "vllm" | "generic") ?? "ollama",
+      maxConcurrent: server.maxConcurrent ?? 1,
+      isDisabled: server.isDisabled ?? false,
     });
   }
 
@@ -117,11 +125,12 @@ export interface RouteDecision {
  */
 export async function routeModel(
   modelName: string,
-  excludeServerIds: number[] = []
+  excludeServerIds: number[] = [],
+  endpointPath?: string | null
 ): Promise<RouteDecision | null> {
   const states = await refreshServerStates();
   const onlineServers = states.filter(
-    (s) => s.isOnline && !excludeServerIds.includes(s.id)
+    (s) => s.isOnline && !s.isDisabled && !excludeServerIds.includes(s.id)
   );
 
   if (onlineServers.length === 0) return null;
@@ -139,6 +148,7 @@ export async function routeModel(
     lastRoutedServerId: lastRoutedServer.get(modelName) ?? null,
     roundRobinCounter,
     busyServerIds: getBusyServerIds(),
+    endpointPath,
   });
 
   if (!result) return null;
@@ -210,7 +220,7 @@ export function getRecommendedPullServer(): PullRecommendation | null {
  */
 export async function pickAnyServer(): Promise<RouteDecision | null> {
   const states = await refreshServerStates();
-  const online = states.filter((s) => s.isOnline);
+  const online = states.filter((s) => s.isOnline && !s.isDisabled);
   if (online.length === 0) return null;
   return {
     host: online[0].host,
@@ -225,7 +235,7 @@ export async function pickAnyServer(): Promise<RouteDecision | null> {
  */
 export async function getAllOnlineServers(): Promise<ServerSnapshot[]> {
   const states = await refreshServerStates();
-  return states.filter((s) => s.isOnline);
+  return states.filter((s) => s.isOnline && !s.isDisabled);
 }
 
 /**
@@ -239,7 +249,7 @@ export async function resolveServerByName(
   const states = await refreshServerStates();
   const lower = serverName.toLowerCase();
   const server = states.find(
-    (s) => s.isOnline && s.name.toLowerCase() === lower
+    (s) => s.isOnline && !s.isDisabled && s.name.toLowerCase() === lower
   );
   if (!server) return null;
   return {

@@ -41,12 +41,17 @@ export interface OllamaVersionResponse {
   version: string;
 }
 
+// Backend types: ollama (default), vllm (OpenAI /v1), generic (health-check only)
+export type BackendType = "ollama" | "vllm" | "generic";
+
 // Server config from env
 export interface ServerConfig {
   name: string;
   host: string;
   ramGb: number;
   metricsPort?: number | null;
+  backendType?: BackendType;
+  maxConcurrent?: number | null;
 }
 
 // System metrics from fleet metrics agent
@@ -81,6 +86,8 @@ export interface ServerState {
   polledAt: string | null;
   modelLoadTimes?: Record<string, string>;
   systemMetrics?: SystemMetrics | null;
+  backendType: BackendType;
+  isDisabled: boolean;
 }
 
 export interface ModelEvent {

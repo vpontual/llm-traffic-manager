@@ -22,6 +22,21 @@ export class BusyRequestTracker {
     return [...this.inFlight.keys()];
   }
 
+  /**
+   * Returns server IDs where in-flight requests >= the server's limit.
+   * Servers not in the limits map default to limit=1 (Ollama behavior).
+   */
+  getFullServerIds(limits: Map<number, number>): number[] {
+    const full: number[] = [];
+    for (const [serverId, count] of this.inFlight) {
+      const limit = limits.get(serverId) ?? 1;
+      if (count >= limit) {
+        full.push(serverId);
+      }
+    }
+    return full;
+  }
+
   getInFlightCount(serverId: number): number {
     return this.inFlight.get(serverId) ?? 0;
   }

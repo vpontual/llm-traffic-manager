@@ -11,6 +11,9 @@ function makeServer(overrides: Partial<ServerSnapshot> & { id: number; name: str
     loadedModels: [],
     availableModels: [],
     totalVramUsed: 0,
+    backendType: "ollama",
+    maxConcurrent: 1,
+    isDisabled: false,
     ...overrides,
   };
 }
@@ -75,6 +78,64 @@ test("busy tracker ignores extra markEnd calls", () => {
   tracker.markEnd(99);
   assert.equal(tracker.getInFlightCount(99), 0);
   assert.deepEqual(tracker.getBusyServerIds(), []);
+});
+
+// --- getFullServerIds (concurrency-aware) ---
+
+test("getFullServerIds returns empty when all under limit", () => {
+  const tracker = new BusyRequestTracker();
+  tracker.markStart(1);
+  tracker.markStart(1);
+  const limits = new Map([[1, 5], [2, 3]]);
+  assert.deepEqual(tracker.getFullServerIds(limits), []);
+});
+
+test("getFullServerIds returns server at limit", () => {
+  const tracker = new BusyRequestTracker();
+  tracker.markStart(1);
+  tracker.markStart(1);
+  tracker.markStart(1);
+  const limits = new Map([[1, 3]]);
+  assert.deepEqual(tracker.getFullServerIds(limits), [1]);
+});
+
+test("getFullServerIds returns server above limit", () => {
+  const tracker = new BusyRequestTracker();
+  tracker.markStart(1);
+  tracker.markStart(1);
+  tracker.markStart(1);
+  tracker.markStart(1);
+  const limits = new Map([[1, 3]]);
+  assert.deepEqual(tracker.getFullServerIds(limits), [1]);
+});
+
+test("getFullServerIds defaults to limit=1 for unknown servers", () => {
+  const tracker = new BusyRequestTracker();
+  tracker.markStart(99);
+  const limits = new Map<number, number>();
+  assert.deepEqual(tracker.getFullServerIds(limits), [99]);
+});
+
+test("getFullServerIds with mixed limits", () => {
+  const tracker = new BusyRequestTracker();
+  // Server 1: 2 in-flight, limit 5 → not full
+  tracker.markStart(1);
+  tracker.markStart(1);
+  // Server 2: 1 in-flight, limit 1 → full
+  tracker.markStart(2);
+  const limits = new Map([[1, 5], [2, 1]]);
+  const full = tracker.getFullServerIds(limits);
+  assert.deepEqual(full, [2]);
+});
+
+test("getFullServerIds treats vllm-like limit correctly", () => {
+  const tracker = new BusyRequestTracker();
+  // Simulate vllm server with high concurrency limit
+  for (let i = 0; i < 9; i++) tracker.markStart(1);
+  const limits = new Map([[1, 10]]);
+  assert.deepEqual(tracker.getFullServerIds(limits), []);
+  tracker.markStart(1); // Now at 10
+  assert.deepEqual(tracker.getFullServerIds(limits), [1]);
 });
 
 test("busy tracking lifecycle redirects while busy and restores loaded preference when free", () => {

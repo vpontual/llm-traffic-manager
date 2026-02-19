@@ -2,7 +2,7 @@
 
 import { db } from "./db";
 import { servers, serverSnapshots, modelEvents, systemMetrics, serverEvents } from "./schema";
-import { pollServer } from "./ollama";
+import { pollServer, pollVllmServer, pollGenericServer } from "./ollama";
 import { fetchSystemMetrics } from "./metrics";
 import { getAgentPlugins } from "./plugins";
 import { eq, sql } from "drizzle-orm";
@@ -46,12 +46,16 @@ async function ensureServersSeeded(configs: ServerConfig[]) {
       .limit(1);
 
     if (existing.length === 0) {
+      const backendType = config.backendType ?? "ollama";
+      const maxConcurrent = config.maxConcurrent ?? (backendType === "vllm" ? 10 : 1);
       await db.insert(servers).values({
         name: config.name,
         host: config.host,
         totalRamGb: config.ramGb,
+        backendType,
+        maxConcurrent,
       });
-      console.log(`Seeded server: ${config.name} (${config.host})`);
+      console.log(`Seeded server: ${config.name} (${config.host}) [${backendType}]`);
     }
   }
 }
@@ -89,9 +93,16 @@ async function pollAllServers() {
         // Resolve metrics host (null = skip metrics for this server)
         const metricsHost = getMetricsHost(server.host);
 
-        // Fetch Ollama data and system metrics in parallel
+        // Dispatch to the right poller based on backend type
+        const backendType = (server.backendType as string) ?? "ollama";
+        const pollFn =
+          backendType === "vllm" ? pollVllmServer :
+          backendType === "generic" ? pollGenericServer :
+          pollServer;
+
+        // Fetch backend data and system metrics in parallel
         const [result, sysMetrics] = await Promise.all([
-          pollServer(server.host),
+          pollFn(server.host),
           metricsHost ? fetchSystemMetrics(metricsHost) : Promise.resolve(null),
         ]);
 
@@ -133,8 +144,13 @@ async function pollAllServers() {
           });
         }
 
-        // Check for alert conditions
-        await checkServerAlerts(server.name, result.isOnline, sysMetrics);
+        // Skip alerts and notifications for disabled (maintenance) servers
+        const isDisabled = server.isDisabled ?? false;
+
+        // Check for alert conditions (skip if in maintenance)
+        if (!isDisabled) {
+          await checkServerAlerts(server.name, result.isOnline, sysMetrics);
+        }
 
         // --- Detect server lifecycle transitions ---
         const wasOnline = previousOnline.get(server.id);
@@ -145,15 +161,17 @@ async function pollAllServers() {
             await db.insert(serverEvents).values({
               serverId: server.id,
               eventType: "offline",
-              detail: null,
+              detail: isDisabled ? "maintenance" : null,
             });
-            console.log(`[${server.name}] Server went offline`);
-            await notifySubscribedUsers({
-              serverId: server.id,
-              serverName: server.name,
-              eventType: "offline",
-              detail: null,
-            });
+            console.log(`[${server.name}] Server went offline${isDisabled ? " (maintenance)" : ""}`);
+            if (!isDisabled) {
+              await notifySubscribedUsers({
+                serverId: server.id,
+                serverName: server.name,
+                eventType: "offline",
+                detail: null,
+              });
+            }
           } else if (!wasOnline && result.isOnline) {
             await db.insert(serverEvents).values({
               serverId: server.id,
@@ -161,12 +179,14 @@ async function pollAllServers() {
               detail: null,
             });
             console.log(`[${server.name}] Server came online`);
-            await notifySubscribedUsers({
-              serverId: server.id,
-              serverName: server.name,
-              eventType: "online",
-              detail: null,
-            });
+            if (!isDisabled) {
+              await notifySubscribedUsers({
+                serverId: server.id,
+                serverName: server.name,
+                eventType: "online",
+                detail: null,
+              });
+            }
           }
         }
         previousOnline.set(server.id, result.isOnline);
@@ -199,13 +219,15 @@ async function pollAllServers() {
                   detail,
                   occurredAt: new Date(boot),
                 });
-                console.log(`[${server.name}] Reboot detected: ${detail ?? "unknown cause"}`);
-                await notifySubscribedUsers({
-                  serverId: server.id,
-                  serverName: server.name,
-                  eventType: "reboot",
-                  detail,
-                });
+                console.log(`[${server.name}] Reboot detected: ${detail ?? "unknown cause"}${isDisabled ? " (maintenance)" : ""}`);
+                if (!isDisabled) {
+                  await notifySubscribedUsers({
+                    serverId: server.id,
+                    serverName: server.name,
+                    eventType: "reboot",
+                    detail,
+                  });
+                }
                 break; // One event per poll cycle is enough
               }
             }

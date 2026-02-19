@@ -89,6 +89,8 @@ export async function GET() {
         polledAt: latest?.polledAt?.toISOString() ?? null,
         modelLoadTimes,
         systemMetrics: sysMetrics,
+        backendType: (server.backendType as "ollama" | "vllm" | "generic") ?? "ollama",
+        isDisabled: server.isDisabled ?? false,
       };
     })
   );
