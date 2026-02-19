@@ -13,9 +13,20 @@ interface ModelRecommendation {
   totalRequestCount: number;
 }
 
+interface OversizedModelRecommendation {
+  modelName: string;
+  serverName: string;
+  serverId: number;
+  modelSizeGb: number;
+  serverRamGb: number;
+  usagePercent: number;
+  availableOn: string[];
+}
+
 export interface RecommendationsResponse {
   considerRemoving: ModelRecommendation[];
   considerAdding: ModelRecommendation[];
+  oversizedModels: OversizedModelRecommendation[];
   periodHours: number;
   serverNames: string[];
 }
@@ -26,7 +37,7 @@ export function ModelRecommendations({
   data: RecommendationsResponse;
 }) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {/* Consider Removing */}
       <div className="bg-surface-raised border border-border rounded-xl overflow-hidden">
         <div className="px-4 py-3 border-b border-border">
@@ -154,6 +165,88 @@ export function ModelRecommendations({
                       </td>
                       <td className="p-3 pr-4 text-xs text-warning">
                         {missingFrom.join(", ")}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Oversized Models */}
+      <div className="bg-surface-raised border border-border rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-border">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-danger" />
+            <h3 className="font-semibold text-text-primary">
+              Oversized Models
+            </h3>
+          </div>
+          <p className="text-xs text-text-muted mt-1">
+            Models too large for their host server&apos;s RAM (&gt;80%)
+          </p>
+        </div>
+        {(data.oversizedModels ?? []).length === 0 ? (
+          <div className="p-4 text-sm text-text-muted flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-success" />
+            No oversized models detected
+          </div>
+        ) : (
+          <div className="max-h-[300px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-surface-raised">
+                <tr className="text-xs text-text-muted uppercase tracking-wide border-b border-border">
+                  <th className="text-left p-3 pl-4">Model</th>
+                  <th className="text-left p-3">Server</th>
+                  <th className="text-right p-3">Size</th>
+                  <th className="text-right p-3">RAM</th>
+                  <th className="text-right p-3">Usage</th>
+                  <th className="text-right p-3 pr-4">Also On</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.oversizedModels.map((rec, i) => {
+                  const otherServers = rec.availableOn.filter(
+                    (s) => s !== rec.serverName
+                  );
+                  return (
+                    <tr
+                      key={i}
+                      className="border-t border-border/50 hover:bg-surface-overlay/30"
+                    >
+                      <td className="p-3 pl-4 font-mono text-text-primary truncate max-w-[180px]">
+                        {rec.modelName}
+                      </td>
+                      <td className="p-3 text-text-secondary whitespace-nowrap">
+                        {rec.serverName}
+                      </td>
+                      <td className="p-3 text-right text-text-secondary">
+                        {rec.modelSizeGb} GB
+                      </td>
+                      <td className="p-3 text-right text-text-secondary">
+                        {rec.serverRamGb} GB
+                      </td>
+                      <td
+                        className={`p-3 text-right font-semibold ${
+                          rec.usagePercent > 90
+                            ? "text-danger"
+                            : "text-warning"
+                        }`}
+                      >
+                        {rec.usagePercent}%
+                      </td>
+                      <td className="p-3 pr-4 text-right">
+                        {otherServers.length > 0 ? (
+                          <span className="text-xs text-success">
+                            {otherServers.join(", ")}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-text-muted">
+                            none
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );

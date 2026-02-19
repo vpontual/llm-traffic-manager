@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { modelEvents, requestLogs, servers, serverSnapshots } from "@/lib/schema";
 import { eq, gte, and, desc, sql } from "drizzle-orm";
 import { getHoursWindow } from "@/lib/api/time-window";
+import { findOversizedModels, type OversizedModelRecommendation, type ServerModelInfo } from "@/lib/oversized-models";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ interface ModelRecommendation {
 interface RecommendationsResponse {
   considerRemoving: ModelRecommendation[];
   considerAdding: ModelRecommendation[];
+  oversizedModels: OversizedModelRecommendation[];
   periodHours: number;
   serverNames: string[];
 }
@@ -38,6 +40,7 @@ export async function GET(request: NextRequest) {
   const serverNames = allServers.map((s) => s.name);
 
   const availabilityMap = new Map<string, string[]>();
+  const serversWithModels: ServerModelInfo[] = [];
 
   for (const server of allServers) {
     const [latest] = await db
@@ -47,12 +50,19 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(serverSnapshots.polledAt))
       .limit(1);
 
-    const available = (latest?.availableModels ?? []) as Array<{ name: string }>;
+    const available = (latest?.availableModels ?? []) as Array<{ name: string; size: number }>;
     for (const model of available) {
       const existing = availabilityMap.get(model.name) ?? [];
       existing.push(server.name);
       availabilityMap.set(model.name, existing);
     }
+
+    serversWithModels.push({
+      serverId: server.id,
+      serverName: server.name,
+      totalRamGb: server.totalRamGb,
+      models: available.map((m) => ({ name: m.name, size: m.size ?? 0 })),
+    });
   }
 
   // 2. Get event counts per (server, model) in the time window
@@ -209,9 +219,13 @@ export async function GET(request: NextRequest) {
   }
   considerAdding.sort((a, b) => b.churnScore - a.churnScore);
 
+  // 6. Detect oversized models (model disk size > 80% of server RAM)
+  const oversizedModels = findOversizedModels(serversWithModels, availabilityMap);
+
   return NextResponse.json({
     considerRemoving,
     considerAdding,
+    oversizedModels,
     periodHours: hours,
     serverNames,
   } satisfies RecommendationsResponse);
