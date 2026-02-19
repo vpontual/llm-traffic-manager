@@ -252,7 +252,7 @@ function proxyRequest(
         host: targetHost,
         "content-length": Buffer.byteLength(body).toString(),
       },
-      timeout: 300000, // 5 min timeout for long generations
+      timeout: 600000, // 10 min timeout for long generations
     };
 
     const proxyReq = http.request(options, (proxyRes) => {
