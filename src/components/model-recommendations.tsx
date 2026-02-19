@@ -31,11 +31,30 @@ export interface RecommendationsResponse {
   serverNames: string[];
 }
 
+interface ServerInfo {
+  id: number;
+  name: string;
+}
+
+interface ModelRecommendationsProps {
+  data: RecommendationsResponse;
+  managementEnabled?: boolean;
+  isAdmin?: boolean;
+  servers?: ServerInfo[];
+  onDelete?: (modelName: string, serverId: number, serverName: string) => void;
+  onPull?: (modelName: string, serverId: number, serverName: string) => void;
+}
+
 export function ModelRecommendations({
   data,
-}: {
-  data: RecommendationsResponse;
-}) {
+  managementEnabled = false,
+  isAdmin = false,
+  servers = [],
+  onDelete,
+  onPull,
+}: ModelRecommendationsProps) {
+  const showActions = managementEnabled && isAdmin;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {/* Consider Removing */}
@@ -66,7 +85,8 @@ export function ModelRecommendations({
                   <th className="text-right p-3">Loads</th>
                   <th className="text-right p-3">Here</th>
                   <th className="text-right p-3">Fleet</th>
-                  <th className="text-right p-3 pr-4">Also On</th>
+                  <th className="text-right p-3">Also On</th>
+                  {showActions && <th className="p-3 pr-4" />}
                 </tr>
               </thead>
               <tbody>
@@ -101,11 +121,23 @@ export function ModelRecommendations({
                       <td className="p-3 text-right text-text-secondary">
                         {rec.totalRequestCount}
                       </td>
-                      <td className="p-3 pr-4 text-right">
+                      <td className="p-3 text-right">
                         <span className="text-xs text-success">
                           {otherServers.join(", ")}
                         </span>
                       </td>
+                      {showActions && (
+                        <td className="p-3 pr-4 text-right">
+                          <button
+                            onClick={() =>
+                              onDelete?.(rec.modelName, rec.serverId, rec.serverName)
+                            }
+                            className="px-2 py-1 text-xs rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -163,8 +195,38 @@ export function ModelRecommendations({
                       <td className="p-3 text-xs text-text-secondary">
                         {rec.availableOn.join(", ")}
                       </td>
-                      <td className="p-3 pr-4 text-xs text-warning">
-                        {missingFrom.join(", ")}
+                      <td className="p-3 pr-4">
+                        {showActions ? (
+                          <div className="flex flex-wrap gap-1">
+                            {missingFrom.map((serverName) => {
+                              const server = servers.find(
+                                (s) => s.name === serverName
+                              );
+                              return server ? (
+                                <button
+                                  key={server.id}
+                                  onClick={() =>
+                                    onPull?.(rec.modelName, server.id, server.name)
+                                  }
+                                  className="px-2 py-0.5 text-xs rounded bg-accent/15 text-accent hover:bg-accent/25 transition-colors"
+                                >
+                                  Pull to {serverName}
+                                </button>
+                              ) : (
+                                <span
+                                  key={serverName}
+                                  className="text-xs text-warning"
+                                >
+                                  {serverName}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-warning">
+                            {missingFrom.join(", ")}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -203,7 +265,8 @@ export function ModelRecommendations({
                   <th className="text-right p-3">Size</th>
                   <th className="text-right p-3">RAM</th>
                   <th className="text-right p-3">Usage</th>
-                  <th className="text-right p-3 pr-4">Also On</th>
+                  <th className="text-right p-3">Also On</th>
+                  {showActions && <th className="p-3 pr-4" />}
                 </tr>
               </thead>
               <tbody>
@@ -237,7 +300,7 @@ export function ModelRecommendations({
                       >
                         {rec.usagePercent}%
                       </td>
-                      <td className="p-3 pr-4 text-right">
+                      <td className="p-3 text-right">
                         {otherServers.length > 0 ? (
                           <span className="text-xs text-success">
                             {otherServers.join(", ")}
@@ -248,6 +311,18 @@ export function ModelRecommendations({
                           </span>
                         )}
                       </td>
+                      {showActions && (
+                        <td className="p-3 pr-4 text-right">
+                          <button
+                            onClick={() =>
+                              onDelete?.(rec.modelName, rec.serverId, rec.serverName)
+                            }
+                            className="px-2 py-1 text-xs rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
