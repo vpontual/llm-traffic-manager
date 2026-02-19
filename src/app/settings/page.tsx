@@ -122,6 +122,12 @@ export default function SettingsPage() {
     Record<number, { offline: boolean; online: boolean; reboot: boolean }>
   >({});
   const [subsMsg, setSubsMsg] = useState("");
+  // --- Fleet Management ---
+  const { data: fleetSettings, mutate: mutateFleet } = useSWR<Record<string, unknown>>(
+    user?.isAdmin ? "/api/settings/fleet" : null,
+    fetcher
+  );
+  const [fleetMsg, setFleetMsg] = useState("");
 
   useEffect(() => {
     if (serverList && subs) {
@@ -179,6 +185,23 @@ export default function SettingsPage() {
       mutateSubs();
     } else {
       setSubsMsg("Failed to save");
+    }
+  }
+
+
+  async function handleToggleManagement() {
+    setFleetMsg("");
+    const current = (fleetSettings?.intelligent_management_enabled as boolean) ?? false;
+    const res = await fetch("/api/settings/fleet", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "intelligent_management_enabled", value: !current }),
+    });
+    if (res.ok) {
+      setFleetMsg(!current ? "Management enabled" : "Management disabled");
+      mutateFleet();
+    } else {
+      setFleetMsg("Failed to update");
     }
   }
 
@@ -357,7 +380,24 @@ export default function SettingsPage() {
               {serverList?.map((server) => {
                 const s = subState[server.id] || { offline: false, online: false, reboot: false };
                 const allOn = s.offline && s.online && s.reboot;
-                return (
+              
+  async function handleToggleManagement() {
+    setFleetMsg("");
+    const current = (fleetSettings?.intelligent_management_enabled as boolean) ?? false;
+    const res = await fetch("/api/settings/fleet", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "intelligent_management_enabled", value: !current }),
+    });
+    if (res.ok) {
+      setFleetMsg(!current ? "Management enabled" : "Management disabled");
+      mutateFleet();
+    } else {
+      setFleetMsg("Failed to update");
+    }
+  }
+
+  return (
                   <tr key={server.id} className="border-b border-border/50 last:border-0">
                     <td className="px-4 py-2 text-text-primary">{server.name}</td>
                     <td className="text-center px-4 py-2">
@@ -415,7 +455,46 @@ export default function SettingsPage() {
         </button>
       </section>
 
-      {/* About */}
+      {/* Fleet Management (admin only) */}
+      {user?.isAdmin && (
+        <section className="bg-surface-raised border border-border rounded-xl p-6 mt-6">
+          <h2 className="text-lg font-semibold text-text-primary mb-4">Fleet Management</h2>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-text-secondary">Intelligent Model Management</p>
+              <p className="text-xs text-text-muted mt-1">
+                When enabled, the Models page shows action buttons to pull and delete models
+                based on recommendations. All actions require confirmation and are logged.
+              </p>
+            </div>
+            <button
+              onClick={handleToggleManagement}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                (fleetSettings?.intelligent_management_enabled as boolean)
+                  ? "bg-accent"
+                  : "bg-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  (fleetSettings?.intelligent_management_enabled as boolean)
+                    ? "translate-x-6"
+                    : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+          <div aria-live="polite">
+            {fleetMsg && (
+              <p className={`text-sm mt-3 ${fleetMsg.includes("enabled") || fleetMsg.includes("disabled") ? "text-green-400" : "text-red-400"}`}>
+                {fleetMsg}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+            {/* About */}
       <section className="bg-surface-raised border border-border rounded-xl p-6 mt-6">
         <h2 className="text-lg font-semibold text-text-primary mb-4">About</h2>
         <div className="space-y-2 text-sm">
