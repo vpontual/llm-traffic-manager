@@ -154,6 +154,29 @@ export const userTelegramConfigs = pgTable("user_telegram_configs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// --- Fleet management ---
+
+export const fleetSettings = pgTable("fleet_settings", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  value: jsonb("value").$type<unknown>().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const managementActions = pgTable("management_actions", {
+  id: serial("id").primaryKey(),
+  action: text("action").notNull(), // "pull" | "delete"
+  modelName: text("model_name").notNull(),
+  serverId: integer("server_id")
+    .references(() => servers.id)
+    .notNull(),
+  serverName: text("server_name").notNull(),
+  status: text("status").notNull(), // "pending" | "success" | "failed"
+  detail: text("detail"),
+  triggeredBy: text("triggered_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const userServerSubscriptions = pgTable("user_server_subscriptions", {
   id: serial("id").primaryKey(),
   userId: integer("user_id")
