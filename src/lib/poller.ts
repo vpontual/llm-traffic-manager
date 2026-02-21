@@ -291,7 +291,7 @@ async function pollAllServers() {
 // --- Data retention cleanup ---
 
 async function cleanOldSnapshots() {
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   await Promise.all([
     db.delete(serverSnapshots).where(sql`${serverSnapshots.polledAt} < ${sevenDaysAgo}`),
     db.delete(systemMetrics).where(sql`${systemMetrics.polledAt} < ${sevenDaysAgo}`),
@@ -329,11 +329,15 @@ export async function startPoller() {
   } catch (err) {
     console.error(err instanceof Error ? err.message : "Invalid POLL_INTERVAL");
   }
-  pollInterval = setInterval(pollAllServers, intervalSec * 1000);
+  pollInterval = setInterval(() => {
+    pollAllServers().catch((err) => console.error('[Poller] Poll cycle error:', err));
+  }, intervalSec * 1000);
   console.log(`Polling every ${intervalSec}s`);
 
   // Clean old snapshots once per hour
-  cleanupInterval = setInterval(cleanOldSnapshots, 60 * 60 * 1000);
+  cleanupInterval = setInterval(() => {
+    cleanOldSnapshots().catch((err) => console.error('[Poller] Cleanup error:', err));
+  }, 60 * 60 * 1000);
 }
 
 export { pollAllServers };

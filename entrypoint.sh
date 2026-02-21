@@ -1,5 +1,28 @@
 #!/bin/sh
-# Start the Next.js dashboard and the Ollama proxy in parallel
-node server.js &
-node proxy.js &
-wait -n
+# Start the Next.js dashboard and the Ollama proxy in parallel.
+# If either process dies, restart it after a short delay.
+
+start_server() {
+  while true; do
+    echo "[entrypoint] Starting Next.js server..."
+    node server.js
+    echo "[entrypoint] Next.js server exited ($?), restarting in 2s..."
+    sleep 2
+  done
+}
+
+start_proxy() {
+  while true; do
+    echo "[entrypoint] Starting Ollama proxy..."
+    node proxy.js
+    echo "[entrypoint] Ollama proxy exited ($?), restarting in 2s..."
+    sleep 2
+  done
+}
+
+start_server &
+start_proxy &
+
+# Wait for all background jobs; if the container receives SIGTERM,
+# the shell forwards it and both loops exit.
+wait

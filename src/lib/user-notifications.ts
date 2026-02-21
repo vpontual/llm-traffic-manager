@@ -64,6 +64,7 @@ async function sendUserTelegram(botToken: string, chatId: string, text: string):
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(10000),
     body: JSON.stringify({
       chat_id: chatId,
       text,

@@ -28,6 +28,14 @@ const MAX_ROUTE_RETRIES = 3;
 const modelNotFoundNotified = new Map<string, number>();
 const NOTIFY_DEBOUNCE_MS = 300000;
 
+// Periodically evict stale entries from the notification debounce map
+setInterval(() => {
+  const now = Date.now();
+  for (const [model, ts] of modelNotFoundNotified) {
+    if (now - ts > NOTIFY_DEBOUNCE_MS * 2) modelNotFoundNotified.delete(model);
+  }
+}, 600000); // every 10 minutes
+
 // --- Endpoint classification ---
 
 // Endpoints where we extract a model field from the request body
@@ -315,7 +323,7 @@ async function handleAggregateTags(
   await Promise.all(
     ollamaServers.map(async (server) => {
       try {
-        const resp = await fetch(`http://${server.host}/api/tags`);
+        const resp = await fetch(`http://${server.host}/api/tags`, { signal: AbortSignal.timeout(10000) });
         const data = await resp.json();
         for (const model of data.models ?? []) {
           if (!allModels.has(model.name)) {
@@ -351,7 +359,7 @@ async function handleAggregatePs(
   await Promise.all(
     ollamaServers.map(async (server) => {
       try {
-        const resp = await fetch(`http://${server.host}/api/ps`);
+        const resp = await fetch(`http://${server.host}/api/ps`, { signal: AbortSignal.timeout(10000) });
         const data = await resp.json();
         for (const model of data.models ?? []) {
           allModels.push({ ...model, _server: server.name, _host: server.host });
@@ -385,7 +393,7 @@ async function handleAggregateModels(
   await Promise.all(
     onlineServers.map(async (server) => {
       try {
-        const resp = await fetch(`http://${server.host}/v1/models`);
+        const resp = await fetch(`http://${server.host}/v1/models`, { signal: AbortSignal.timeout(10000) });
         const data = await resp.json();
         for (const model of data.data ?? []) {
           if (!seen.has(model.id)) {
@@ -572,6 +580,15 @@ async function handleRequest(
   }
   logRequest(source, userId, model, path, method, null, null, 404, Date.now() - startTime);
 }
+
+// --- Process hardening: log but don't crash on stray rejections ---
+process.on("unhandledRejection", (err) => {
+  console.error("[proxy] Unhandled rejection (non-fatal):", err);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[proxy] Uncaught exception (non-fatal):", err);
+});
 
 // --- Server startup ---
 
