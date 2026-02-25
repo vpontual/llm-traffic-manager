@@ -235,11 +235,12 @@ function resolveProxyError(
 /**
  * Proxy a request to a target Ollama server, streaming the response back.
  *
- * When allowRetry is true, 404 responses are intercepted and checked for
- * "not found" in the body (Ollama's model-not-found pattern). If detected,
- * the response is NOT written to `res` and retryable is set to true so the
- * caller can re-route to a different server. Connection errors (ECONNREFUSED
- * etc.) are also retryable.
+ * When allowRetry is true, 404 and 500 responses are intercepted and checked
+ * for retryable error patterns (Ollama's model-not-found on 404, or server
+ * errors on 500 that indicate a transient loading failure). If detected, the
+ * response is NOT written to `res` and retryable is set to true so the caller
+ * can re-route to a different server. Connection errors (ECONNREFUSED etc.)
+ * are also retryable.
  */
 function proxyRequest(
   targetHost: string,
@@ -266,17 +267,21 @@ function proxyRequest(
     const proxyReq = http.request(options, (proxyRes) => {
       const statusCode = proxyRes.statusCode ?? 500;
 
-      // In retry mode, intercept 404s to check for model-not-found
-      if (allowRetry && statusCode === 404) {
+      // In retry mode, intercept error responses to check for retryable patterns
+      if (allowRetry && (statusCode === 404 || statusCode === 500)) {
         const chunks: Buffer[] = [];
         proxyRes.on("data", (chunk: Buffer) => chunks.push(chunk));
         proxyRes.on("end", () => {
           const responseBody = Buffer.concat(chunks).toString();
-          if (responseBody.includes("not found")) {
-            // Model not found. Don't write to res, signal retry
+          if (statusCode === 404 && responseBody.includes("not found")) {
+            // Model not found on this server, retry on another
+            resolve({ statusCode, retryable: true });
+          } else if (statusCode === 500) {
+            // Server error (e.g. model failed to load, VRAM issue), retry on another
+            console.log(`[proxy] Backend returned 500: ${responseBody.slice(0, 200)}`);
             resolve({ statusCode, retryable: true });
           } else {
-            // Some other 404, forward to client
+            // Non-retryable 404, forward to client
             res.writeHead(statusCode, proxyRes.headers);
             res.end(Buffer.concat(chunks));
             resolve({ statusCode, retryable: false });
@@ -529,8 +534,12 @@ async function handleRequest(
     }
 
     if (result.retryable) {
+      const retryReason =
+        result.statusCode === 404 ? "Model not found" :
+        result.statusCode === 500 ? "Server error" :
+        "Server unreachable";
       console.log(
-        `[proxy] ${result.statusCode === 404 ? "Model not found" : "Server unreachable"} on ${route.serverName} (${route.host}), trying next server...`
+        `[proxy] ${retryReason} on ${route.serverName} (${route.host}), trying next server...`
       );
       excludeServerIds.push(route.serverId);
       clearOptimisticLoad(model!, route.serverId);
