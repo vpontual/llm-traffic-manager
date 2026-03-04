@@ -177,6 +177,26 @@ export const managementActions = pgTable("management_actions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// --- Model discovery ---
+
+export const modelDiscoveries = pgTable("model_discoveries", {
+  id: serial("id").primaryKey(),
+  modelName: text("model_name").notNull().unique(),
+  modelFamily: text("model_family"),
+  families: jsonb("families").$type<string[]>().default([]),
+  parameterSize: text("parameter_size"),
+  quantization: text("quantization"),
+  modelSize: bigint("model_size", { mode: "number" }).default(0),
+  description: text("description"),
+  capabilities: jsonb("capabilities").$type<string[]>().default([]),
+  pullCount: text("pull_count"),
+  registryExists: boolean("registry_exists"),
+  firstSeenServerName: text("first_seen_server_name").notNull(),
+  infoFetchStatus: text("info_fetch_status").default("pending").notNull(),
+  infoFetchedAt: timestamp("info_fetched_at"),
+  discoveredAt: timestamp("discovered_at").defaultNow().notNull(),
+});
+
 export const userServerSubscriptions = pgTable("user_server_subscriptions", {
   id: serial("id").primaryKey(),
   userId: integer("user_id")

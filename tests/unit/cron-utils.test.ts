@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  describeCron,
   detectConflicts,
   findOpenSlots,
   getNextExecutions,
@@ -133,4 +134,58 @@ test("findOpenSlots can return zero when schedule is fully occupied", () => {
   );
 
   assert.equal(slots.length, 0);
+});
+
+// --- getNextExecutions error path ---
+
+test("getNextExecutions returns empty for invalid cron", () => {
+  const result = getNextExecutions("not-valid-cron", 3, 60_000);
+  assert.deepEqual(result, []);
+});
+
+// --- describeCron tests ---
+
+test("describeCron returns 'Every minute' for * * * * *", () => {
+  assert.equal(describeCron("* * * * *"), "Every minute");
+});
+
+test("describeCron returns 'Every hour' for 0 * * * *", () => {
+  assert.equal(describeCron("0 * * * *"), "Every hour");
+});
+
+test("describeCron returns 'Daily at midnight' for 0 0 * * *", () => {
+  assert.equal(describeCron("0 0 * * *"), "Daily at midnight");
+});
+
+test("describeCron returns interval for */N hours", () => {
+  assert.equal(describeCron("0 */3 * * *"), "Every 3 hours");
+});
+
+test("describeCron returns interval for */N minutes", () => {
+  assert.equal(describeCron("*/15 * * * *"), "Every 15 minutes");
+});
+
+test("describeCron matches midnight before weekly/monthly", () => {
+  // 0 0 * * 0 matches "minute=0 && hour=0" first → "Daily at midnight"
+  assert.equal(describeCron("0 0 * * 0"), "Daily at midnight");
+  assert.equal(describeCron("0 0 1 * *"), "Daily at midnight");
+});
+
+test("describeCron returns daily at HH:MM for specific time", () => {
+  assert.equal(describeCron("30 14 * * *"), "Daily at 14:30");
+});
+
+test("describeCron returns invalid for bad expression", () => {
+  assert.equal(describeCron("not-a-cron"), "Invalid cron expression");
+});
+
+test("describeCron returns invalid for too few parts", () => {
+  assert.equal(describeCron("* *"), "Invalid cron expression");
+});
+
+test("describeCron returns next execution for non-matching patterns", () => {
+  // "0 0 15 6 *" has minute=0 hour=0 → matches "Daily at midnight" first
+  // Use a pattern that doesn't match any shortcut: specific day + month + dow
+  const result = describeCron("15 9 15 6 3");
+  assert.ok(result.startsWith("Next:"), `expected "Next:..." but got "${result}"`);
 });

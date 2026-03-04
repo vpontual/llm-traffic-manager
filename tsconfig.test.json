@@ -29,7 +29,9 @@
     "src/lib/permissions.ts",
     "src/lib/alert-rules.ts",
     "src/lib/registry-check.ts",
-    "src/lib/oversized-models.ts"
+    "src/lib/oversized-models.ts",
+    "src/lib/model-info-parse.ts",
+    "src/lib/service-affinity.ts"
   ],
   "exclude": [
     "node_modules",

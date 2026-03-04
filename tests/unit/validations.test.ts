@@ -145,6 +145,142 @@ test("validateUserUpdateInput validates payload shape", () => {
   assert.equal(valid.ok, true);
 });
 
+// --- Additional auth coverage ---
+
+test("validateLoginInput rejects missing credentials", () => {
+  const result = validateLoginInput({});
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.error, /Missing credentials/);
+});
+
+test("validateSetupInput accepts valid long password", () => {
+  const result = validateSetupInput({
+    username: "admin",
+    password: "1234567890",
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.data.username, "admin");
+  }
+});
+
+test("validateNewUserInput rejects short password", () => {
+  const result = validateNewUserInput({
+    username: "user",
+    password: "short",
+  });
+  assert.equal(result.ok, false);
+});
+
+test("validateNewUserInput accepts isAdmin true", () => {
+  const result = validateNewUserInput({
+    username: "admin",
+    password: "averystrongpassword",
+    isAdmin: true,
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.data.isAdmin, true);
+});
+
+// --- Additional telegram coverage ---
+
+test("validateTelegramConfigInput accepts valid input with defaults", () => {
+  const result = validateTelegramConfigInput({
+    botToken: "123:ABC",
+    chatId: "456",
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.data.isEnabled, true);
+    assert.equal(result.data.botToken, "123:ABC");
+  }
+});
+
+test("validateTelegramConfigInput accepts isEnabled false", () => {
+  const result = validateTelegramConfigInput({
+    botToken: "123:ABC",
+    chatId: "456",
+    isEnabled: false,
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.data.isEnabled, false);
+});
+
+// --- Additional scheduled-jobs coverage ---
+
+test("validateCreateScheduledJobInput accepts preferred server id as string", () => {
+  const result = validateCreateScheduledJobInput({
+    name: "job",
+    sourceIdentifier: "src",
+    cronExpression: "*/5 * * * *",
+    targetModel: "llama3",
+    preferredServerId: "5",
+    timezone: "America/New_York",
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.data.preferredServerId, 5);
+    assert.equal(result.data.timezone, "America/New_York");
+  }
+});
+
+test("validateCreateScheduledJobInput defaults duration when invalid", () => {
+  const result = validateCreateScheduledJobInput({
+    name: "job",
+    sourceIdentifier: "src",
+    cronExpression: "*/5 * * * *",
+    targetModel: "llama3",
+    expectedDurationMs: "invalid",
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.data.expectedDurationMs, 60000);
+    assert.equal(result.data.preferredServerId, null);
+  }
+});
+
+test("validateScheduledJobUpdates passes through valid fields", () => {
+  const result = validateScheduledJobUpdates({
+    name: "updated",
+    isEnabled: false,
+    cronExpression: "*/10 * * * *",
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.data.name, "updated");
+    assert.equal(result.data.isEnabled, false);
+    assert.equal(result.data.cronExpression, "*/10 * * * *");
+  }
+});
+
+test("validateScheduledJobUpdates returns updatedAt even with empty body", () => {
+  const result = validateScheduledJobUpdates({});
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.ok(result.data.updatedAt instanceof Date);
+  }
+});
+
+test("validateScheduledJobSuggestionsInput accepts valid params", () => {
+  const params = new URLSearchParams("model=llama3&durationMs=90000&hours=48");
+  const result = validateScheduledJobSuggestionsInput(params);
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.data.model, "llama3");
+    assert.equal(result.data.durationMs, 90000);
+    assert.equal(result.data.hours, 48);
+  }
+});
+
+test("validateScheduledJobSuggestionsInput clamps hours to 168", () => {
+  const params = new URLSearchParams("model=llama3&hours=999");
+  const result = validateScheduledJobSuggestionsInput(params);
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.data.hours, 168);
+  }
+});
+
 test("validateSubscriptionsInput validates subscription array payload", () => {
   const valid = validateSubscriptionsInput([
     {

@@ -1,15 +1,16 @@
 // Fleet poller -- polls all Ollama servers, records snapshots, detects changes
 
 import { db } from "./db";
-import { servers, serverSnapshots, modelEvents, systemMetrics, serverEvents, requestLogs } from "./schema";
+import { servers, serverSnapshots, modelEvents, systemMetrics, serverEvents, requestLogs, modelDiscoveries } from "./schema";
 import { pollServer, pollVllmServer, pollGenericServer } from "./ollama";
 import { fetchSystemMetrics } from "./metrics";
 import { getAgentPlugins } from "./plugins";
 import { eq, sql } from "drizzle-orm";
-import type { ServerConfig, OllamaRunningModel } from "./types";
+import type { ServerConfig, OllamaRunningModel, OllamaAvailableModel } from "./types";
 import { checkServerAlerts } from "./alerts";
 import { notifySubscribedUsers } from "./user-notifications";
 import { readJsonEnv, readPositiveIntEnv } from "./env";
+import { fetchModelInfo, getInfoFetchStatus } from "./model-info";
 
 // --- In-memory state for diffing between polls --- loaded models between polls
 const previousModels = new Map<number, Set<string>>();
@@ -17,6 +18,10 @@ const previousModels = new Map<number, Set<string>>();
 // In-memory state for detecting server lifecycle transitions
 const previousOnline = new Map<number, boolean>();
 const previousBootSet = new Map<number, Set<string>>();
+
+// Fleet-wide model discovery: tracks all models ever seen across all servers
+const knownFleetModels = new Set<string>();
+let knownFleetModelsSeeded = false;
 
 // Config lookup by host for per-server settings (e.g. metricsPort)
 const serverConfigMap = new Map<string, ServerConfig>();
@@ -82,6 +87,83 @@ function getMetricsHost(serverHost: string): string | null {
   return `${ip}:${defaultPort}`;
 }
 
+// --- Model discovery ---
+
+async function seedKnownFleetModels() {
+  if (knownFleetModelsSeeded) return;
+  const existing = await db
+    .select({ modelName: modelDiscoveries.modelName })
+    .from(modelDiscoveries);
+  for (const row of existing) {
+    knownFleetModels.add(row.modelName);
+  }
+  knownFleetModelsSeeded = true;
+}
+
+async function checkForNewModels(
+  availableModels: OllamaAvailableModel[],
+  serverName: string
+) {
+  for (const model of availableModels) {
+    const name = model.name;
+    if (knownFleetModels.has(name)) continue;
+
+    // Mark as known immediately to prevent parallel polls racing
+    knownFleetModels.add(name);
+
+    // Insert discovery row with local metadata from the model
+    await db
+      .insert(modelDiscoveries)
+      .values({
+        modelName: name,
+        modelFamily: model.details?.family ?? null,
+        families: model.details?.families ?? [],
+        parameterSize: model.details?.parameter_size ?? null,
+        quantization: model.details?.quantization_level ?? null,
+        modelSize: model.size ?? 0,
+        firstSeenServerName: serverName,
+        infoFetchStatus: "pending",
+      })
+      .onConflictDoNothing();
+
+    console.log(`[Discovery] New model detected: ${name} on ${serverName}`);
+
+    // Fire-and-forget enrichment
+    enrichDiscovery(name).catch((err) =>
+      console.error(`[Discovery] Enrichment failed for ${name}:`, err)
+    );
+  }
+}
+
+async function enrichDiscovery(modelName: string) {
+  const info = await fetchModelInfo(modelName);
+  const status = getInfoFetchStatus(info);
+
+  const updates: Record<string, unknown> = {
+    infoFetchStatus: status,
+    infoFetchedAt: new Date(),
+    registryExists: info.registryExists,
+  };
+
+  if (info.ollamaCom) {
+    if (info.ollamaCom.description) updates.description = info.ollamaCom.description;
+    if (info.ollamaCom.capabilities.length > 0) updates.capabilities = info.ollamaCom.capabilities;
+    if (info.ollamaCom.pullCount) updates.pullCount = info.ollamaCom.pullCount;
+  }
+
+  if (info.registry) {
+    if (info.registry.modelFamily) updates.modelFamily = info.registry.modelFamily;
+    if (info.registry.families.length > 0) updates.families = info.registry.families;
+  }
+
+  await db
+    .update(modelDiscoveries)
+    .set(updates)
+    .where(eq(modelDiscoveries.modelName, modelName));
+
+  console.log(`[Discovery] Enriched ${modelName} (status: ${status})`);
+}
+
 // --- Main poll loop ---
 
 async function pollAllServers() {
@@ -120,6 +202,12 @@ async function pollAllServers() {
           availableModels: result.availableModels as unknown[],
           totalVramUsed: totalVramUsed,
         });
+
+        // Check for new models across the fleet
+        await checkForNewModels(
+          result.availableModels as OllamaAvailableModel[],
+          server.name
+        );
 
         // Store system metrics if available
         if (sysMetrics) {
@@ -293,12 +381,14 @@ async function pollAllServers() {
 async function cleanOldData() {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
   await Promise.all([
     db.delete(serverSnapshots).where(sql`${serverSnapshots.polledAt} < ${sevenDaysAgo}`),
     db.delete(systemMetrics).where(sql`${systemMetrics.polledAt} < ${sevenDaysAgo}`),
     db.delete(serverEvents).where(sql`${serverEvents.occurredAt} < ${sevenDaysAgo}`),
     db.delete(requestLogs).where(sql`${requestLogs.createdAt} < ${sevenDaysAgo}`),
     db.delete(modelEvents).where(sql`${modelEvents.occurredAt} < ${thirtyDaysAgo}`),
+    db.delete(modelDiscoveries).where(sql`${modelDiscoveries.discoveredAt} < ${ninetyDaysAgo}`),
   ]);
 }
 
@@ -321,6 +411,9 @@ export async function startPoller() {
 
   console.log(`Starting poller for ${configs.length} servers...`);
   await ensureServersSeeded(configs);
+
+  // Seed known models from existing discoveries
+  await seedKnownFleetModels();
 
   // Initial poll
   await pollAllServers();
