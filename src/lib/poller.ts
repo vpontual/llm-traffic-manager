@@ -1,7 +1,7 @@
 // Fleet poller -- polls all Ollama servers, records snapshots, detects changes
 
 import { db } from "./db";
-import { servers, serverSnapshots, modelEvents, systemMetrics, serverEvents } from "./schema";
+import { servers, serverSnapshots, modelEvents, systemMetrics, serverEvents, requestLogs } from "./schema";
 import { pollServer, pollVllmServer, pollGenericServer } from "./ollama";
 import { fetchSystemMetrics } from "./metrics";
 import { getAgentPlugins } from "./plugins";
@@ -290,12 +290,15 @@ async function pollAllServers() {
 
 // --- Data retention cleanup ---
 
-async function cleanOldSnapshots() {
+async function cleanOldData() {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   await Promise.all([
     db.delete(serverSnapshots).where(sql`${serverSnapshots.polledAt} < ${sevenDaysAgo}`),
     db.delete(systemMetrics).where(sql`${systemMetrics.polledAt} < ${sevenDaysAgo}`),
     db.delete(serverEvents).where(sql`${serverEvents.occurredAt} < ${sevenDaysAgo}`),
+    db.delete(requestLogs).where(sql`${requestLogs.createdAt} < ${sevenDaysAgo}`),
+    db.delete(modelEvents).where(sql`${modelEvents.occurredAt} < ${thirtyDaysAgo}`),
   ]);
 }
 
@@ -336,7 +339,7 @@ export async function startPoller() {
 
   // Clean old snapshots once per hour
   cleanupInterval = setInterval(() => {
-    cleanOldSnapshots().catch((err) => console.error('[Poller] Cleanup error:', err));
+    cleanOldData().catch((err) => console.error('[Poller] Cleanup error:', err));
   }, 60 * 60 * 1000);
 }
 

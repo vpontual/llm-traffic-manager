@@ -13,7 +13,7 @@ export async function pullModel(
   modelName: string
 ): Promise<ModelOperationResult> {
   try {
-    const res = await fetch(`${host}/api/pull`, {
+    const res = await fetch(`http://${host}/api/pull`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model: modelName, stream: false }),
@@ -42,7 +42,7 @@ export async function deleteModel(
   modelName: string
 ): Promise<ModelOperationResult> {
   try {
-    const res = await fetch(`${host}/api/delete`, {
+    const res = await fetch(`http://${host}/api/delete`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model: modelName }),

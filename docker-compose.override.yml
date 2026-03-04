@@ -15,10 +15,6 @@ services:
       - ADMIN_USERNAME=${ADMIN_USERNAME:-smoke-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-smoke-password}
       - SOURCE_NAMES={"127.0.0.1":"docker-local"}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    group_add:
-      - "999"
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://$(hostname -i):3000/ || exit 1"]
       interval: 30s
