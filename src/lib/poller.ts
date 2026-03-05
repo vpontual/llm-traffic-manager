@@ -19,6 +19,9 @@ const previousModels = new Map<number, Set<string>>();
 const previousOnline = new Map<number, boolean>();
 const previousBootSet = new Map<number, Set<string>>();
 
+// Consecutive failure counter: only declare offline after N consecutive failed polls
+const failureCount = new Map<number, number>();
+
 // Fleet-wide model discovery: tracks all models ever seen across all servers
 const knownFleetModels = new Set<string>();
 let knownFleetModelsSeeded = false;
@@ -235,9 +238,26 @@ async function pollAllServers() {
         // Skip alerts and notifications for disabled (maintenance) servers
         const isDisabled = server.isDisabled ?? false;
 
+        // --- Consecutive failure gating ---
+        // Only declare a server offline after OFFLINE_THRESHOLD consecutive failed polls
+        // to filter out transient network blips and brief hiccups.
+        const offlineThreshold = readPositiveIntEnv("OFFLINE_THRESHOLD", 3);
+        let effectiveOnline = result.isOnline;
+
+        if (!result.isOnline) {
+          const count = (failureCount.get(server.id) ?? 0) + 1;
+          failureCount.set(server.id, count);
+          if (count < offlineThreshold) {
+            // Not enough consecutive failures yet — treat as still online
+            effectiveOnline = true;
+          }
+        } else {
+          failureCount.set(server.id, 0);
+        }
+
         // Check for alert conditions (skip if in maintenance)
         if (!isDisabled) {
-          await checkServerAlerts(server.name, result.isOnline, sysMetrics);
+          await checkServerAlerts(server.name, effectiveOnline, sysMetrics);
         }
 
         // --- Detect server lifecycle transitions ---
@@ -245,7 +265,7 @@ async function pollAllServers() {
 
         // Online/Offline transitions (skip first poll to avoid false positives)
         if (wasOnline !== undefined) {
-          if (wasOnline && !result.isOnline) {
+          if (wasOnline && !effectiveOnline) {
             await db.insert(serverEvents).values({
               serverId: server.id,
               eventType: "offline",
@@ -260,7 +280,7 @@ async function pollAllServers() {
                 detail: null,
               });
             }
-          } else if (!wasOnline && result.isOnline) {
+          } else if (!wasOnline && effectiveOnline) {
             await db.insert(serverEvents).values({
               serverId: server.id,
               eventType: "online",
@@ -277,7 +297,7 @@ async function pollAllServers() {
             }
           }
         }
-        previousOnline.set(server.id, result.isOnline);
+        previousOnline.set(server.id, effectiveOnline);
 
         // Reboot detection via boot list diffing
         if (sysMetrics?.recent_boots && sysMetrics.recent_boots.length > 0) {
