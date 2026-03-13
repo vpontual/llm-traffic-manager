@@ -5,8 +5,9 @@ import type {
   OllamaTagsResponse,
   OllamaVersionResponse,
 } from "./types";
+import { readPositiveIntEnv } from "./env";
 
-const TIMEOUT_MS = 5000;
+const TIMEOUT_MS = readPositiveIntEnv("HEALTH_CHECK_TIMEOUT", 5000);
 
 async function fetchWithTimeout(
   url: string,

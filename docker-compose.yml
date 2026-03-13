@@ -13,6 +13,10 @@ services:
       - ADMIN_USERNAME=${ADMIN_USERNAME:-}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - SOURCE_NAMES=${SOURCE_NAMES:-{}}
+      - OFFLINE_THRESHOLD=${OFFLINE_THRESHOLD:-3}
+      - HEALTH_CHECK_TIMEOUT=${HEALTH_CHECK_TIMEOUT:-5000}
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
     healthcheck:
       test: ["CMD-SHELL", "wget -q --tries=1 --spider http://$(hostname -i):3000/ && wget -q --tries=1 --spider http://$(hostname -i):11434/ || exit 1"]
       interval: 30s
