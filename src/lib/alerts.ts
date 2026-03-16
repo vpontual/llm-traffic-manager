@@ -28,7 +28,7 @@ export async function checkServerAlerts(
   // Server offline
   if (!isOnline) {
     await alert(serverName, "offline",
-      `<b>\u26a0\ufe0f Server Offline</b>\n\n<b>${serverName}</b> is not responding.`
+      `*\u26a0\ufe0f Server Offline*\n\n*${serverName}* is not responding.`
     );
     return; // No point checking metrics if server is down
   }
@@ -38,14 +38,14 @@ export async function checkServerAlerts(
   // GPU overheating
   if (metrics.temperatures.gpu != null && metrics.temperatures.gpu >= THRESHOLDS.GPU_TEMP) {
     await alert(serverName, "gpu_temp",
-      `<b>\ud83d\udd25 GPU Overheating</b>\n\n<b>${serverName}</b>\nGPU temperature: ${Math.round(metrics.temperatures.gpu)}\u00b0C (threshold: ${THRESHOLDS.GPU_TEMP}\u00b0C)`
+      `*\ud83d\udd25 GPU Overheating*\n\n*${serverName}*\nGPU temperature: ${Math.round(metrics.temperatures.gpu)}\u00b0C (threshold: ${THRESHOLDS.GPU_TEMP}\u00b0C)`
     );
   }
 
   // CPU overheating
   if (metrics.temperatures.cpu != null && metrics.temperatures.cpu >= THRESHOLDS.CPU_TEMP) {
     await alert(serverName, "cpu_temp",
-      `<b>\ud83d\udd25 CPU Overheating</b>\n\n<b>${serverName}</b>\nCPU temperature: ${Math.round(metrics.temperatures.cpu)}\u00b0C (threshold: ${THRESHOLDS.CPU_TEMP}\u00b0C)`
+      `*\ud83d\udd25 CPU Overheating*\n\n*${serverName}*\nCPU temperature: ${Math.round(metrics.temperatures.cpu)}\u00b0C (threshold: ${THRESHOLDS.CPU_TEMP}\u00b0C)`
     );
   }
 
@@ -56,7 +56,7 @@ export async function checkServerAlerts(
       const pct = Math.round(diskUsage * 100);
       const freeGb = metrics.disk.total_gb - metrics.disk.used_gb;
       await alert(serverName, "disk",
-        `<b>\ud83d\udcbe Disk Nearly Full</b>\n\n<b>${serverName}</b>\nDisk usage: ${pct}% (${freeGb}GB free of ${metrics.disk.total_gb}GB)`
+        `*\ud83d\udcbe Disk Nearly Full*\n\n*${serverName}*\nDisk usage: ${pct}% (${freeGb}GB free of ${metrics.disk.total_gb}GB)`
       );
     }
   }
@@ -67,7 +67,7 @@ export async function checkServerAlerts(
     if (availableRatio < THRESHOLDS.MEM_AVAILABLE) {
       const pct = Math.round((1 - availableRatio) * 100);
       await alert(serverName, "memory",
-        `<b>\ud83d\udca8 Low Memory</b>\n\n<b>${serverName}</b>\nMemory usage: ${pct}% (${metrics.memory.available_mb}MB available of ${metrics.memory.total_mb}MB)`
+        `*\ud83d\udca8 Low Memory*\n\n*${serverName}*\nMemory usage: ${pct}% (${metrics.memory.available_mb}MB available of ${metrics.memory.total_mb}MB)`
       );
     }
   }
@@ -81,7 +81,7 @@ export async function checkServerAlerts(
       for (const boot of currentBoots) {
         if (!prevBoots.has(boot)) {
           await alert(serverName, "reboot",
-            `<b>\ud83d\udd04 Server Rebooted</b>\n\n<b>${serverName}</b>\nBoot detected at: ${boot}\nUptime: ${formatUptime(metrics.uptime_seconds)}`
+            `*\ud83d\udd04 Server Rebooted*\n\n*${serverName}*\nBoot detected at: ${boot}\nUptime: ${formatUptime(metrics.uptime_seconds)}`
           );
           break; // One alert is enough even if multiple new boots
         }

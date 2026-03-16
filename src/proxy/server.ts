@@ -573,10 +573,10 @@ async function handleRequest(
           ? recommendation.loadedModels.join(", ")
           : "none";
         sendTelegramMessage(
-          `⚠️ <b>Model not found</b>\n\n` +
-          `Model: <code>${model}</code>\n` +
+          `⚠️ *Model not found*\n\n` +
+          `Model: \`${model}\`\n` +
           `Requested by: ${source}\n` +
-          `Best server: <b>${recommendation.serverName}</b> ` +
+          `Best server: *${recommendation.serverName}* ` +
           `(${recommendation.freeVramGb} GB free of ${recommendation.totalRamGb} GB)\n` +
           `Currently loaded: ${loaded}\n\n` +
           `Reply /pull_missing to download it.`

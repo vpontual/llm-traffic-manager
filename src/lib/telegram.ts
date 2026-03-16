@@ -22,7 +22,7 @@ export async function sendTelegramMessage(text: string): Promise<void> {
       body: JSON.stringify({
         chat_id: TELEGRAM_CHAT_ID,
         text,
-        parse_mode: "HTML",
+        parse_mode: "Markdown",
         disable_web_page_preview: true,
       }),
     });
@@ -45,7 +45,7 @@ export async function sendTelegramReply(chatId: string | number, text: string): 
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        parse_mode: "HTML",
+        parse_mode: "Markdown",
         disable_web_page_preview: true,
       }),
     });

@@ -27,6 +27,7 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    mem_limit: 256m
 
   db:
     image: postgres:17-alpine
@@ -44,6 +45,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    mem_limit: 256m
 
 volumes:
   pgdata:

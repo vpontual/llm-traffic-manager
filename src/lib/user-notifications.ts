@@ -68,7 +68,7 @@ async function sendUserTelegram(botToken: string, chatId: string, text: string):
     body: JSON.stringify({
       chat_id: chatId,
       text,
-      parse_mode: "HTML",
+      parse_mode: "Markdown",
       disable_web_page_preview: true,
     }),
   });
@@ -80,11 +80,11 @@ async function sendUserTelegram(botToken: string, chatId: string, text: string):
 function formatEventMessage(event: ServerEventNotification): string {
   switch (event.eventType) {
     case "offline":
-      return "<b>\u26a0\ufe0f Server Offline</b>\n\n<b>" + event.serverName + "</b> is not responding.";
+      return "*\u26a0\ufe0f Server Offline*\n\n*" + event.serverName + "* is not responding.";
     case "online":
-      return "<b>\u2705 Server Online</b>\n\n<b>" + event.serverName + "</b> is back online.";
+      return "*\u2705 Server Online*\n\n*" + event.serverName + "* is back online.";
     case "reboot":
-      return "<b>\ud83d\udd04 Server Rebooted</b>\n\n<b>" + event.serverName + "</b> rebooted." +
+      return "*\ud83d\udd04 Server Rebooted*\n\n*" + event.serverName + "* rebooted." +
         (event.detail ? "\n" + event.detail : "");
   }
 }

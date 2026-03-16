@@ -26,7 +26,7 @@ async function sendReply(botToken: string, chatId: number, text: string): Promis
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        parse_mode: "HTML",
+        parse_mode: "Markdown",
         disable_web_page_preview: true,
       }),
     });
@@ -42,7 +42,7 @@ async function sendReply(botToken: string, chatId: number, text: string): Promis
 
 async function handleStatus(botToken: string, chatId: number): Promise<void> {
   const allServers = await db.select().from(servers);
-  const lines: string[] = ["<b>Fleet Status</b>\n"];
+  const lines: string[] = ["*Fleet Status*\n"];
 
   for (const server of allServers) {
     const [snap] = await db
@@ -60,7 +60,7 @@ async function handleStatus(botToken: string, chatId: number): Promise<void> {
       .limit(1);
 
     if (!snap) {
-      lines.push(`\u2753 <b>${server.name}</b> - no data`);
+      lines.push(`\u2753 *${server.name}* - no data`);
       continue;
     }
 
@@ -76,9 +76,9 @@ async function handleStatus(botToken: string, chatId: number): Promise<void> {
         : "no models loaded";
 
     if (snap.isOnline) {
-      lines.push(`${icon} <b>${server.name}</b> - online (${uptime}) - ${modelInfo}`);
+      lines.push(`${icon} *${server.name}* - online (${uptime}) - ${modelInfo}`);
     } else {
-      lines.push(`${icon} <b>${server.name}</b> - offline`);
+      lines.push(`${icon} *${server.name}* - offline`);
     }
   }
 
@@ -87,7 +87,7 @@ async function handleStatus(botToken: string, chatId: number): Promise<void> {
 
 async function handleLastReboot(botToken: string, chatId: number): Promise<void> {
   const allServers = await db.select().from(servers);
-  const lines: string[] = ["<b>Recent Reboots</b>\n"];
+  const lines: string[] = ["*Recent Reboots*\n"];
 
   for (const server of allServers) {
     const [reboot] = await db
@@ -103,13 +103,13 @@ async function handleLastReboot(botToken: string, chatId: number): Promise<void>
       .limit(1);
 
     if (!reboot) {
-      lines.push(`<b>${server.name}</b> - no reboots recorded`);
+      lines.push(`*${server.name}* - no reboots recorded`);
       continue;
     }
 
     const ago = timeAgo(reboot.occurredAt.toISOString());
     const detail = reboot.detail ?? "unknown cause";
-    lines.push(`<b>${server.name}</b> - ${ago} - ${detail}`);
+    lines.push(`*${server.name}* - ${ago} - ${detail}`);
   }
 
   await sendReply(botToken, chatId, lines.join("\n"));
@@ -191,7 +191,7 @@ async function handlePullMissing(botToken: string, chatId: number, args: string)
   await sendReply(
     botToken,
     chatId,
-    `\u2b07\ufe0f Pulling <b>${modelName}</b> to <b>${target.name}</b> (${target.freeVramGb} GB free of ${target.totalRamGb} GB)...\n\nThis may take a while for large models.`
+    `\u2b07\ufe0f Pulling *${modelName}* to *${target.name}* (${target.freeVramGb} GB free of ${target.totalRamGb} GB)...\n\nThis may take a while for large models.`
   );
 
   try {
@@ -211,7 +211,7 @@ async function handlePullMissing(botToken: string, chatId: number, args: string)
       await sendReply(
         botToken,
         chatId,
-        `\u2705 <b>${modelName}</b> pulled to <b>${target.name}</b> successfully!`
+        `\u2705 *${modelName}* pulled to *${target.name}* successfully!`
       );
     } else {
       const body = await res.text();
@@ -233,11 +233,11 @@ async function handlePullMissing(botToken: string, chatId: number, args: string)
 
 async function handleHelp(botToken: string, chatId: number): Promise<void> {
   const text = [
-    "<b>Available Commands</b>\n",
+    "*Available Commands*\n",
     "/status - Show fleet status: online/offline state, uptime, and loaded models for each server",
     "/last_reboot - Show the most recent reboot for each server with timestamp and cause",
     "/pull_missing - Download the last missing model to the best server",
-    "/pull_missing &lt;model&gt; - Download a specific model to the best server",
+    "/pull_missing <model> - Download a specific model to the best server",
     "/help - Show this list of commands",
   ].join("\n");
   await sendReply(botToken, chatId, text);
