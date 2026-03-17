@@ -55,10 +55,45 @@ export function detectNativeConversion(body: Buffer): { parsed: ParsedV1Body; ct
 /**
  * Convert OpenAI /v1/chat/completions request body to Ollama /api/chat format.
  */
+/**
+ * Convert OpenAI-format messages to Ollama native format.
+ *
+ * Key differences:
+ * - OpenAI tool_calls have id, type, and JSON-string arguments
+ * - Ollama tool_calls have only function.name and object arguments
+ * - OpenAI tool messages have tool_call_id
+ * - Ollama tool messages have no tool_call_id
+ */
+function convertMessagesToNative(messages: unknown[]): unknown[] {
+  return messages.map((msg: any) => {
+    if (!msg || typeof msg !== "object") return msg;
+    const converted: Record<string, unknown> = { role: msg.role };
+
+    if (msg.content !== undefined) converted.content = msg.content;
+
+    // Convert assistant tool_calls from OpenAI to Ollama format
+    if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+      converted.tool_calls = msg.tool_calls.map((tc: any) => ({
+        function: {
+          name: tc.function?.name ?? tc.name,
+          arguments:
+            typeof tc.function?.arguments === "string"
+              ? JSON.parse(tc.function.arguments)
+              : tc.function?.arguments ?? {},
+        },
+      }));
+    }
+
+    // Strip tool_call_id from tool messages (Ollama does not use it)
+    // All other fields are passed through
+    return converted;
+  });
+}
+
 export function convertRequestToNative(parsed: ParsedV1Body): Buffer {
   const native: Record<string, unknown> = {
     model: parsed.model,
-    messages: parsed.messages,
+    messages: convertMessagesToNative(parsed.messages ?? []),
     stream: parsed.stream ?? true,
   };
 
