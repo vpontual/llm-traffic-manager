@@ -69,7 +69,17 @@ function convertMessagesToNative(messages: unknown[]): unknown[] {
     if (!msg || typeof msg !== "object") return msg;
     const converted: Record<string, unknown> = { role: msg.role };
 
-    if (msg.content !== undefined) converted.content = msg.content;
+    // Flatten array content to string. OpenAI allows content as an array
+    // of parts (e.g. [{"type":"text","text":"..."}]) but Ollama expects
+    // a plain string.
+    if (Array.isArray(msg.content)) {
+      converted.content = msg.content
+        .filter((p: any) => p.type === "text")
+        .map((p: any) => p.text ?? "")
+        .join("");
+    } else if (msg.content !== undefined) {
+      converted.content = msg.content;
+    }
 
     // Convert assistant tool_calls from OpenAI to Ollama format
     if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
@@ -78,7 +88,7 @@ function convertMessagesToNative(messages: unknown[]): unknown[] {
           name: tc.function?.name ?? tc.name,
           arguments:
             typeof tc.function?.arguments === "string"
-              ? JSON.parse(tc.function.arguments)
+              ? (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })()
               : tc.function?.arguments ?? {},
         },
       }));
