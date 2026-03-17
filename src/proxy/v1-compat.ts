@@ -1,7 +1,7 @@
 // OpenAI /v1/chat/completions <-> Ollama native /api/chat conversion.
-// Triggered when a /v1 request contains Ollama-specific fields (think, options)
-// that the OpenAI-compatible endpoint ignores. The proxy rewrites the request
-// to /api/chat and converts the response back to OpenAI format.
+// All /v1/chat/completions requests are converted to native /api/chat format
+// to ensure Ollama-specific features (think, num_ctx) work correctly and
+// thinking model responses are properly handled. Responses are converted back.
 
 import { Transform, type TransformCallback } from "node:stream";
 
@@ -28,22 +28,25 @@ export interface ConversionContext {
 }
 
 /**
- * Check if a /v1/chat/completions body needs native /api/chat conversion.
- * Returns the parsed body if conversion is needed, null otherwise.
+ * Check if a /v1/chat/completions body should be converted to native /api/chat.
+ *
+ * Always converts: the native endpoint supports Ollama-specific fields (think,
+ * options.num_ctx) that the OpenAI-compatible endpoint ignores. Converting all
+ * /v1 requests ensures consistent behavior for thinking models (which return
+ * reasoning content that breaks OpenAI-format clients) and allows options like
+ * num_ctx to take effect.
  */
 export function detectNativeConversion(body: Buffer): { parsed: ParsedV1Body; ctx: ConversionContext } | null {
   try {
     const parsed: ParsedV1Body = JSON.parse(body.toString());
-    if (parsed.think !== undefined || parsed.options !== undefined) {
-      return {
-        parsed,
-        ctx: {
-          model: (parsed.model as string) ?? "",
-          isStreaming: parsed.stream !== false,
-        },
-      };
-    }
-    return null;
+    if (!parsed.model) return null;
+    return {
+      parsed,
+      ctx: {
+        model: (parsed.model as string) ?? "",
+        isStreaming: parsed.stream !== false,
+      },
+    };
   } catch {
     return null;
   }
