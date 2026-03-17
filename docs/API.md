@@ -75,3 +75,35 @@ These endpoints combine responses from all online servers:
 ### Retry Behavior
 
 Read operations (`/api/generate`, `/api/chat`, `/api/embed`, `/v1/chat/completions`, `/v1/embeddings`) retry on a different server if the first returns a 404 (model not found). Write operations (`/api/pull`, `/api/create`, `/api/copy`, `/api/delete`) do not retry.
+
+### OpenAI-Compatible Endpoint (/v1/chat/completions)
+
+All `/v1/chat/completions` requests are automatically converted to Ollama's native `/api/chat` format before being forwarded to backend servers. Responses are converted back to OpenAI format (including SSE streaming). This enables two things that Ollama's built-in `/v1` handler does not support:
+
+**Thinking model control** - The `think` field is forwarded to the backend, allowing clients to disable reasoning output from models like Qwen3.5 and GLM that default to thinking mode:
+
+```json
+{
+  "model": "qwen3.5:35b",
+  "messages": [{"role": "user", "content": "hello"}],
+  "think": false
+}
+```
+
+Without this, thinking models return a `reasoning` field alongside empty `content`, which breaks most OpenAI-compatible clients.
+
+**Ollama options passthrough** - The `options` object is forwarded to control Ollama-specific parameters like context window size:
+
+```json
+{
+  "model": "qwen3.5:35b",
+  "messages": [{"role": "user", "content": "hello"}],
+  "think": false,
+  "options": {
+    "num_ctx": 65536,
+    "temperature": 0.7
+  }
+}
+```
+
+Standard OpenAI parameters (`temperature`, `max_tokens`, `top_p`, `stop`, `tools`) are also translated to their Ollama equivalents during conversion.
