@@ -76,11 +76,15 @@ These endpoints combine responses from all online servers:
 
 Read operations (`/api/generate`, `/api/chat`, `/api/embed`, `/v1/chat/completions`, `/v1/embeddings`) retry on a different server if the first returns a 404 (model not found). Write operations (`/api/pull`, `/api/create`, `/api/copy`, `/api/delete`) do not retry.
 
-### OpenAI-Compatible Endpoint (/v1/chat/completions)
+### OpenAI-Compatible Endpoint (`/v1/chat/completions`)
 
-All `/v1/chat/completions` requests are automatically converted to Ollama's native `/api/chat` format before being forwarded to backend servers. Responses are converted back to OpenAI format (including SSE streaming). This enables two things that Ollama's built-in `/v1` handler does not support:
+All `/v1/chat/completions` requests are automatically converted to Ollama's native `/api/chat` format before being forwarded to backend servers. Responses are converted back to OpenAI format (including SSE streaming).
 
-**Thinking model control** - The `think` field is forwarded to the backend, allowing clients to disable reasoning output from models like Qwen3.5 and GLM that default to thinking mode:
+This conversion is handled by `src/proxy/v1-compat.ts` and solves three compatibility problems between the OpenAI API format and Ollama's native API:
+
+#### 1. Thinking model control
+
+The `think` field is forwarded to the backend, allowing clients to disable reasoning output from models like Qwen3.5 and GLM that default to thinking mode:
 
 ```json
 {
@@ -92,7 +96,9 @@ All `/v1/chat/completions` requests are automatically converted to Ollama's nati
 
 Without this, thinking models return a `reasoning` field alongside empty `content`, which breaks most OpenAI-compatible clients.
 
-**Ollama options passthrough** - The `options` object is forwarded to control Ollama-specific parameters like context window size:
+#### 2. Ollama options passthrough
+
+The `options` object is forwarded to control Ollama-specific parameters like context window size:
 
 ```json
 {
@@ -106,4 +112,14 @@ Without this, thinking models return a `reasoning` field alongside empty `conten
 }
 ```
 
-Standard OpenAI parameters (`temperature`, `max_tokens`, `top_p`, `stop`, `tools`) are also translated to their Ollama equivalents during conversion.
+Standard OpenAI parameters (`temperature`, `max_tokens`, `top_p`, `stop`, `tools`) are also translated to their Ollama equivalents.
+
+#### 3. Message format translation
+
+OpenAI and Ollama use different formats for messages. The proxy automatically converts:
+
+- **Array content**: OpenAI allows `content` as `[{"type": "text", "text": "..."}]`. Ollama requires a plain string. The proxy flattens array content automatically.
+- **Tool calls**: OpenAI assistant messages include `id`, `type`, and JSON-string `arguments` in tool_calls. Ollama expects only `function.name` and object `arguments`. The proxy strips the extra fields and parses the arguments.
+- **Tool messages**: OpenAI includes `tool_call_id` on tool-role messages. Ollama does not use this field. The proxy removes it.
+
+This means any OpenAI-compatible client (OpenCode, Continue, Cursor, AI SDK apps, etc.) can use the proxy without modification, even with multi-turn conversations that include tool use.

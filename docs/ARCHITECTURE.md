@@ -25,6 +25,8 @@ Standalone Node.js server built with esbuild (`src/proxy/server.ts`). Routes Oll
 
 Also aggregates `/api/tags`, `/api/ps`, and `/v1/models` responses from all servers, so clients see the full fleet as a single Ollama instance.
 
+All `/v1/chat/completions` requests are converted to native `/api/chat` format before forwarding (`src/proxy/v1-compat.ts`). This enables Ollama-specific features (thinking control via `think`, context size via `options.num_ctx`) and translates OpenAI message formats (array content, tool_calls with id/type, tool_call_id) to Ollama's expected structure. Responses are converted back to OpenAI format, including SSE streaming.
+
 ### Polling Service
 
 Started via Next.js instrumentation (`src/instrumentation.ts`). Runs every `POLL_INTERVAL` seconds (default 10):
