@@ -18,6 +18,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { readJsonEnv } from "../lib/env";
 import { extractModel } from "./parse";
 import { sendTelegramMessage } from "../lib/telegram";
+import { detectNativeConversion, convertRequestToNative, convertResponseToV1, createV1StreamTransform, type ConversionContext } from "./v1-compat";
 
 const PROXY_PORT = 11434;
 
@@ -247,14 +248,16 @@ function proxyRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   body: Buffer,
-  allowRetry: boolean = false
+  allowRetry: boolean = false,
+  pathOverride?: string,
+  responseTransform?: { type: "stream"; transform: import("node:stream").Transform } | { type: "buffer"; transform: (buf: Buffer) => Buffer },
 ): Promise<ProxyResult> {
   return new Promise((resolve) => {
     const [host, port] = targetHost.split(":");
     const options: http.RequestOptions = {
       hostname: host,
       port: parseInt(port || "11434", 10),
-      path: req.url,
+      path: pathOverride ?? req.url,
       method: req.method,
       headers: {
         ...req.headers,
@@ -291,11 +294,34 @@ function proxyRequest(
         return;
       }
 
-      // Normal path, stream directly
-      res.writeHead(statusCode, proxyRes.headers);
-      proxyRes.pipe(res);
-      proxyRes.on("end", () => resolve({ statusCode, retryable: false }));
-      proxyRes.on("error", (err) => resolveProxyError(err, res, allowRetry, resolve));
+      // Normal path: stream directly, or through transform if converting
+      if (responseTransform?.type === "stream") {
+        const headers = { ...proxyRes.headers };
+        headers["content-type"] = "text/event-stream";
+        delete headers["content-length"];
+        res.writeHead(statusCode, headers);
+        proxyRes.pipe(responseTransform.transform).pipe(res);
+        responseTransform.transform.on("end", () => resolve({ statusCode, retryable: false }));
+        responseTransform.transform.on("error", (err) => resolveProxyError(err, res, false, resolve));
+      } else if (responseTransform?.type === "buffer") {
+        const chunks: Buffer[] = [];
+        proxyRes.on("data", (chunk: Buffer) => chunks.push(chunk));
+        proxyRes.on("end", () => {
+          const transformed = responseTransform.transform(Buffer.concat(chunks));
+          const headers = { ...proxyRes.headers };
+          headers["content-type"] = "application/json";
+          headers["content-length"] = Buffer.byteLength(transformed).toString();
+          res.writeHead(statusCode, headers);
+          res.end(transformed);
+          resolve({ statusCode, retryable: false });
+        });
+        proxyRes.on("error", (err) => resolveProxyError(err, res, false, resolve));
+      } else {
+        res.writeHead(statusCode, proxyRes.headers);
+        proxyRes.pipe(res);
+        proxyRes.on("end", () => resolve({ statusCode, retryable: false }));
+        proxyRes.on("error", (err) => resolveProxyError(err, res, allowRetry, resolve));
+      }
     });
 
     proxyReq.on("error", (err) => resolveProxyError(err, res, allowRetry, resolve));
@@ -469,6 +495,20 @@ async function handleRequest(
     body = await readBody(req);
   }
 
+  // Convert /v1/chat/completions with Ollama-specific fields (think, options)
+  // to native /api/chat so the backend honors them. Response is converted back.
+  let effectivePath = path;
+  let nativeConversion: ConversionContext | null = null;
+
+  if (path === "/v1/chat/completions" && body.length > 0) {
+    const conversion = detectNativeConversion(body);
+    if (conversion) {
+      body = convertRequestToNative(conversion.parsed);
+      effectivePath = "/api/chat";
+      nativeConversion = conversion.ctx;
+    }
+  }
+
   // Extract model from request body
   const model = MODEL_ENDPOINTS.has(path) ? extractModel(body) : null;
 
@@ -518,7 +558,15 @@ async function handleRequest(
 
     let result: ProxyResult;
     try {
-      result = await proxyRequest(route.host, req, res, body, allowRetry);
+      result = await proxyRequest(
+        route.host, req, res, body, allowRetry,
+        nativeConversion ? effectivePath : undefined,
+        nativeConversion
+          ? nativeConversion.isStreaming
+            ? { type: "stream" as const, transform: createV1StreamTransform(nativeConversion.model) }
+            : { type: "buffer" as const, transform: (buf: Buffer) => convertResponseToV1(buf, nativeConversion!.model) }
+          : undefined,
+      );
     } catch (err) {
       console.error(
         `[proxy] unexpected proxy error for ${route.serverName} (${route.host})`,
