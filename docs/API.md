@@ -80,7 +80,7 @@ Read operations (`/api/generate`, `/api/chat`, `/api/embed`, `/v1/chat/completio
 
 All `/v1/chat/completions` requests are automatically converted to Ollama's native `/api/chat` format before being forwarded to backend servers. Responses are converted back to OpenAI format (including SSE streaming).
 
-This conversion is handled by `src/proxy/v1-compat.ts` and solves three compatibility problems between the OpenAI API format and Ollama's native API:
+This conversion is handled by `src/proxy/v1-compat.ts` and solves five compatibility problems between the OpenAI API format and Ollama's native API:
 
 #### 1. Thinking model control
 
@@ -123,3 +123,17 @@ OpenAI and Ollama use different formats for messages. The proxy automatically co
 - **Tool messages**: OpenAI includes `tool_call_id` on tool-role messages. Ollama does not use this field. The proxy removes it.
 
 This means any OpenAI-compatible client (OpenCode, Continue, Cursor, AI SDK apps, etc.) can use the proxy without modification, even with multi-turn conversations that include tool use.
+
+#### 4. Streaming tool call spec compliance
+
+Ollama's OpenAI-compatible API omits the `index` field on streamed tool call deltas, which is required by the OpenAI specification. The proxy adds the correct `index` to each tool call in both streaming and non-streaming responses, ensuring compatibility with clients that validate strictly against the spec (e.g. OpenCode).
+
+The proxy also tracks whether tool calls were emitted during a streaming response. When the final chunk arrives, it uses this to set `finish_reason: "tool_calls"` instead of `"stop"`, which is necessary for agentic clients to know they should process the tool calls and continue the conversation loop.
+
+#### 5. Top-level Ollama parameter passthrough
+
+In addition to the nested `options` object, Ollama-native parameters can be sent at the top level of the request body. This is useful for clients like OpenCode that include parameters such as `num_ctx` at the top level rather than nested inside `options`:
+
+
+
+Supported top-level parameters: `num_ctx`, `num_gpu`, `num_thread`, `num_keep`, `num_batch`, `repeat_penalty`, `repeat_last_n`, `mirostat`, `mirostat_tau`, `mirostat_eta`, `penalize_newline`, `num_predict`, `tfs_z`, `typical_p`, `min_p`, `top_k`. These are merged into the native `options` object, with explicitly nested `options` values taking precedence.

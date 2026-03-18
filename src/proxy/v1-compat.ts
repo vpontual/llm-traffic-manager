@@ -124,6 +124,20 @@ export function convertRequestToNative(parsed: ParsedV1Body): Buffer {
   if (parsed.presence_penalty !== undefined) options.presence_penalty = parsed.presence_penalty;
   if (parsed.seed !== undefined) options.seed = parsed.seed;
 
+  // Pass through Ollama-native options sent at the top level of the request
+  // (e.g. num_ctx, num_gpu, num_thread, repeat_penalty, mirostat, etc.).
+  // This lets clients like opencode include Ollama-specific params alongside
+  // standard OpenAI fields without needing a nested "options" object.
+  const ollamaPassthrough = [
+    "num_ctx", "num_gpu", "num_thread", "num_keep", "num_batch",
+    "repeat_penalty", "repeat_last_n", "mirostat", "mirostat_tau",
+    "mirostat_eta", "penalize_newline", "num_predict", "tfs_z", "typical_p",
+    "min_p", "top_k"
+  ];
+  for (const key of ollamaPassthrough) {
+    if (parsed[key] !== undefined && options[key] === undefined) options[key] = parsed[key];
+  }
+
   if (Object.keys(options).length > 0) native.options = options;
 
   return Buffer.from(JSON.stringify(native));
@@ -134,6 +148,7 @@ export function convertRequestToNative(parsed: ParsedV1Body): Buffer {
  */
 function convertToolCalls(toolCalls: unknown[]): unknown[] {
   return toolCalls.map((tc: any, i: number) => ({
+    index: i,
     id: `call_${Date.now()}_${i}`,
     type: "function",
     function: {
@@ -200,6 +215,7 @@ export function createV1StreamTransform(model: string): Transform {
   const created = Math.floor(Date.now() / 1000);
   let buffer = "";
   let sentRole = false;
+  let sentToolCalls = false;
 
   return new Transform({
     transform(chunk: Buffer, _encoding: string, callback: TransformCallback) {
@@ -223,7 +239,7 @@ export function createV1StreamTransform(model: string): Transform {
                 {
                   index: 0,
                   delta: {},
-                  finish_reason: native.message?.tool_calls ? "tool_calls" : "stop",
+                  finish_reason: (native.message?.tool_calls || sentToolCalls) ? "tool_calls" : (native.done_reason ?? "stop"),
                 },
               ],
               usage: {
@@ -244,13 +260,11 @@ export function createV1StreamTransform(model: string): Transform {
             }
             if (msg.content) delta.content = msg.content;
             if (msg.tool_calls) {
+              sentToolCalls = true;
               delta.tool_calls = convertToolCalls(msg.tool_calls);
             }
             // Skip chunks with empty delta (e.g. reasoning-only chunks)
-            if (Object.keys(delta).length === 0) {
-              callback();
-              return;
-            }
+            if (Object.keys(delta).length === 0) continue;
 
             const chunk_data = {
               id: chatId,
