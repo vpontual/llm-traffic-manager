@@ -98,7 +98,7 @@ export function NavBar() {
   };
 
   return (
-    <nav className="sticky top-0 z-40 bg-surface/80 backdrop-blur-md border-b border-border">
+    <nav role="navigation" aria-label="Main navigation" className="sticky top-0 z-40 bg-surface/80 backdrop-blur-md border-b border-border">
       <div className="max-w-[1440px] mx-auto px-4">
         <div className="flex items-center justify-between h-14">
           {/* Left: Brand + nav links */}
@@ -127,6 +127,7 @@ export function NavBar() {
             {NAV_ITEMS.map((item) => (
               <Link
                 key={item.href}
+                aria-current={isActive(item.href) ? "page" : undefined}
                 href={item.href}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${
                   isActive(item.href)

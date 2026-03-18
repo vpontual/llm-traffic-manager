@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -29,6 +29,16 @@ export function ConfirmationModal({
 }: ConfirmationModalProps) {
   const [acknowledged, setAcknowledged] = useState(false);
 
+  const handleEscape = useCallback((e: KeyboardEvent) => {
+    if (e.key === "Escape") onCancel();
+  }, [onCancel]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isOpen, handleEscape]);
+
   if (!isOpen) return null;
 
   const canConfirm = !requireAcknowledge || acknowledged;
@@ -43,8 +53,8 @@ export function ConfirmationModal({
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onCancel}
       />
-      <div className="relative bg-surface-raised border border-border rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
-        <h3 className="text-lg font-semibold text-text-primary mb-2">
+      <div role="dialog" aria-modal="true" aria-labelledby="modal-title" className="relative bg-surface-raised border border-border rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
+        <h3 id="modal-title" className="text-lg font-semibold text-text-primary mb-2">
           {title}
         </h3>
         <p className="text-sm text-text-secondary mb-4">{description}</p>
