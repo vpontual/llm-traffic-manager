@@ -11,6 +11,8 @@ import {
   getRecommendedPullServer,
   markRequestStart,
   markRequestEnd,
+  waitForServerSlot,
+  getQueueLength,
 } from "./router";
 import { db } from "../lib/db";
 import { requestLogs, users } from "../lib/schema";
@@ -554,6 +556,25 @@ async function handleRequest(
     // client even if it's an error, so they get a meaningful message.
     const allowRetry = canRetry && attempt < MAX_ROUTE_RETRIES;
     const trackBusy = GENERATION_ENDPOINTS.has(path);
+
+    // Queue: if this is a generation request, wait for a slot on the target server
+    if (trackBusy) {
+      const queueLen = getQueueLength(route.serverId);
+      if (queueLen > 0) {
+        console.log(`[proxy] ${source} queued for ${route.serverName} (${queueLen} ahead)`);
+      }
+      try {
+        await waitForServerSlot(route.serverId, 300000); // 5 min timeout
+      } catch (err) {
+        console.log(`[proxy] Queue timeout for ${route.serverName}, returning 503`);
+        if (!res.headersSent) {
+          res.writeHead(503);
+          res.end(JSON.stringify({ error: `server ${route.serverName} busy, queue timeout` }));
+        }
+        logRequest(source, userId, model, path, method, route.serverId, route.host, 503, Date.now() - startTime, "queue_timeout");
+        return;
+      }
+    }
     if (trackBusy) markRequestStart(route.serverId);
 
     let result: ProxyResult;

@@ -34,25 +34,3 @@ export async function sendTelegramMessage(text: string): Promise<void> {
   }
 }
 
-export async function sendTelegramReply(chatId: string | number, text: string): Promise<void> {
-  if (!TELEGRAM_BOT_TOKEN) return;
-
-  try {
-    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: "Markdown",
-        disable_web_page_preview: true,
-      }),
-    });
-    if (!res.ok) {
-      console.error(`[Telegram] Reply failed: ${res.status} ${res.statusText}`);
-    }
-  } catch (err) {
-    console.error("[Telegram] Reply error:", err);
-  }
-}

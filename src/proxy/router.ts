@@ -13,6 +13,20 @@ import { BusyRequestTracker } from "./busy-tracker";
 import { unloadModel } from "../lib/ollama";
 
 
+export async function waitForServerSlot(serverId: number, timeoutMs: number = 300000): Promise<void> {
+  const limits = new Map<number, number>();
+  for (const s of cachedStates) {
+    limits.set(s.id, s.maxConcurrent);
+  }
+  const limit = limits.get(serverId) ?? 1;
+  return busyTracker.waitForSlot(serverId, limit, timeoutMs);
+}
+
+export function getQueueLength(serverId: number): number {
+  return busyTracker.getQueueLength(serverId);
+}
+
+
 // In-memory cache of server states, refreshed periodically from poller DB data
 let cachedStates: ServerSnapshot[] = [];
 let lastRefresh = 0;
@@ -43,24 +57,7 @@ export function markRequestEnd(serverId: number): void {
 }
 
 
-/**
- * Wait for a slot to open on a specific server. Used for queuing when a
- * pinned server or all candidate servers are at capacity.
- * Returns immediately if the server has a free slot.
- * Rejects after timeoutMs (default 5 min) if no slot opens.
- */
-export async function waitForServerSlot(serverId: number, timeoutMs: number = 300000): Promise<void> {
-  const limits = new Map<number, number>();
-  for (const s of cachedStates) {
-    limits.set(s.id, s.maxConcurrent);
-  }
-  const limit = limits.get(serverId) ?? 1;
-  return busyTracker.waitForSlot(serverId, limit, timeoutMs);
-}
 
-export function getQueueLength(serverId: number): number {
-  return busyTracker.getQueueLength(serverId);
-}
 
 function getBusyServerIds(): number[] {
   // Build per-server concurrency limits from cached state
