@@ -64,6 +64,27 @@
       "when": 1771600000000,
       "tag": "0008_multi_backend",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1771800000000,
+      "tag": "0009_fleet_management",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1772000000000,
+      "tag": "0010_model_discoveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1772200000000,
+      "tag": "0011_performance_indexes",
+      "breakpoints": true
     }
   ]
 }

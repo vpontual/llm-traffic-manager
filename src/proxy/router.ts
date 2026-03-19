@@ -75,30 +75,32 @@ export async function refreshServerStates(): Promise<ServerSnapshot[]> {
   }
 
   const allServers = await db.select().from(servers);
-  const states: ServerSnapshot[] = [];
 
-  for (const server of allServers) {
-    const [latest] = await db
-      .select()
-      .from(serverSnapshots)
-      .where(eq(serverSnapshots.serverId, server.id))
-      .orderBy(desc(serverSnapshots.polledAt))
-      .limit(1);
+  // Parallel snapshot queries (was sequential N+1)
+  const states: ServerSnapshot[] = await Promise.all(
+    allServers.map(async (server) => {
+      const [latest] = await db
+        .select()
+        .from(serverSnapshots)
+        .where(eq(serverSnapshots.serverId, server.id))
+        .orderBy(desc(serverSnapshots.polledAt))
+        .limit(1);
 
-    states.push({
-      id: server.id,
-      name: server.name,
-      host: server.host,
-      totalRamGb: server.totalRamGb,
-      isOnline: latest?.isOnline ?? false,
-      loadedModels: (latest?.loadedModels ?? []) as OllamaRunningModel[],
-      availableModels: (latest?.availableModels ?? []) as OllamaAvailableModel[],
-      totalVramUsed: latest?.totalVramUsed ?? 0,
-      backendType: (server.backendType as "ollama" | "vllm" | "generic") ?? "ollama",
-      maxConcurrent: server.maxConcurrent ?? 1,
-      isDisabled: server.isDisabled ?? false,
-    });
-  }
+      return {
+        id: server.id,
+        name: server.name,
+        host: server.host,
+        totalRamGb: server.totalRamGb,
+        isOnline: latest?.isOnline ?? false,
+        loadedModels: (latest?.loadedModels ?? []) as OllamaRunningModel[],
+        availableModels: (latest?.availableModels ?? []) as OllamaAvailableModel[],
+        totalVramUsed: latest?.totalVramUsed ?? 0,
+        backendType: (server.backendType as "ollama" | "vllm" | "generic") ?? "ollama",
+        maxConcurrent: server.maxConcurrent ?? 1,
+        isDisabled: server.isDisabled ?? false,
+      };
+    })
+  );
 
   // Clear optimistic entries for models that the poller now confirms are loaded.
   // This keeps the optimistic map small and lets poller data take over.
