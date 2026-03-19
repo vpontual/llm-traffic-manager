@@ -10,6 +10,7 @@ import { eq, desc } from "drizzle-orm";
 import type { OllamaRunningModel, OllamaAvailableModel } from "../lib/types";
 import { selectRoute, freeVram, type ServerSnapshot } from "./route-logic";
 import { BusyRequestTracker } from "./busy-tracker";
+import { unloadModel } from "../lib/ollama";
 
 
 // In-memory cache of server states, refreshed periodically from poller DB data
@@ -39,6 +40,26 @@ export function markRequestStart(serverId: number): void {
 
 export function markRequestEnd(serverId: number): void {
   busyTracker.markEnd(serverId);
+}
+
+
+/**
+ * Wait for a slot to open on a specific server. Used for queuing when a
+ * pinned server or all candidate servers are at capacity.
+ * Returns immediately if the server has a free slot.
+ * Rejects after timeoutMs (default 5 min) if no slot opens.
+ */
+export async function waitForServerSlot(serverId: number, timeoutMs: number = 300000): Promise<void> {
+  const limits = new Map<number, number>();
+  for (const s of cachedStates) {
+    limits.set(s.id, s.maxConcurrent);
+  }
+  const limit = limits.get(serverId) ?? 1;
+  return busyTracker.waitForSlot(serverId, limit, timeoutMs);
+}
+
+export function getQueueLength(serverId: number): number {
+  return busyTracker.getQueueLength(serverId);
 }
 
 function getBusyServerIds(): number[] {
@@ -123,6 +144,55 @@ export interface RouteDecision {
  * @param excludeServerIds - Server IDs to skip (used by retry logic when a
  *   server returned model-not-found or was unreachable)
  */
+
+/**
+ * Active Model Eviction: when a server needs to load a model but has idle
+ * models hogging VRAM, force-unload them. A model is "idle" if it is loaded
+ * on the server but has zero in-flight requests (per busy-tracker).
+ *
+ * Only evicts on Ollama backends (vLLM/generic don't support dynamic unloading).
+ * Runs asynchronously -- the proxy doesn't wait for eviction to complete before
+ * forwarding the request, but it gives Ollama a head start on freeing VRAM.
+ */
+/**
+ * Active Model Eviction: when a server needs to load a model but has idle
+ * models hogging VRAM, force-unload them. A model is "idle" if it is loaded
+ * on the server but has zero in-flight requests (per busy-tracker).
+ *
+ * Only evicts on Ollama backends (vLLM/generic don't support dynamic unloading).
+ * Runs asynchronously -- fires unload requests without blocking the proxy.
+ */
+async function evictIdleModelsIfNeeded(
+  targetServer: ServerSnapshot,
+  requestedModel: string
+): Promise<void> {
+  // Only evict on Ollama backends
+  if (targetServer.backendType !== "ollama") return;
+
+  // If model is already loaded on this server, no eviction needed
+  if (targetServer.loadedModels.some((m) => m.name === requestedModel)) return;
+
+  // No loaded models to evict
+  if (targetServer.loadedModels.length === 0) return;
+
+  // Only evict if the server has no in-flight requests (all models are idle)
+  if (busyTracker.getInFlightCount(targetServer.id) > 0) return;
+
+  // Evict all idle models to make room, largest first
+  const idleModels = targetServer.loadedModels
+    .filter((m) => m.name !== requestedModel)
+    .sort((a, b) => (b.size_vram ?? b.size ?? 0) - (a.size_vram ?? a.size ?? 0));
+
+  for (const model of idleModels) {
+    const sizeGb = Math.round(((model.size_vram || model.size || 0) / 1024 / 1024 / 1024) * 10) / 10;
+    console.log(
+      `[evict] Unloading idle model ${model.name} from ${targetServer.name} ` +
+      `(${sizeGb}GB) to make room for ${requestedModel}`
+    );
+    unloadModel(targetServer.host, model.name).catch(() => {});
+  }
+}
+
 export async function routeModel(
   modelName: string,
   excludeServerIds: number[] = [],
@@ -152,6 +222,13 @@ export async function routeModel(
   });
 
   if (!result) return null;
+
+  // Active eviction: if the model needs to be loaded (not already in memory),
+  // proactively unload idle models on the target server to free VRAM.
+  const needsLoad = !result.reason.startsWith("model_loaded");
+  if (needsLoad) {
+    evictIdleModelsIfNeeded(result.server, modelName).catch(err => console.error("[evict-error]", err));
+  }
 
   roundRobinCounter = result.roundRobinCounter;
   lastRoutedServer.set(modelName, result.server.id);

@@ -199,3 +199,21 @@ export async function pollGenericServer(host: string) {
     availableModels: [],
   };
 }
+
+/**
+ * Force-unload a model from an Ollama server by sending a generate request
+ * with keep_alive=0. This tells Ollama to unload the model immediately.
+ */
+export async function unloadModel(host: string, modelName: string): Promise<boolean> {
+  try {
+    const res = await fetch(`http://${host}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: modelName, prompt: "", keep_alive: "0s" }),
+      signal: AbortSignal.timeout(10000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
