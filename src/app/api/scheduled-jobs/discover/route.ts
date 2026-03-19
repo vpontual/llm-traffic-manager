@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import http from "http";
+import { withAdmin } from "@/lib/api/route-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -170,6 +171,7 @@ export async function GET() {
 }
 
 export async function POST() {
+  return withAdmin(async () => {
   try {
     const containers = await getContainerEnvVars();
     const discoveredJobs = discoverJobsFromEnv(containers);
@@ -228,4 +230,5 @@ export async function POST() {
       { status: 500 }
     );
   }
+});
 }

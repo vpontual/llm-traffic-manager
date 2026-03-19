@@ -12,10 +12,12 @@ import {
   type SourceModelUsage,
 } from "@/lib/service-affinity";
 import { parsePositiveInt } from "@/lib/validations/numbers";
+import { withAuth } from "@/lib/api/route-helpers";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  return withAuth(async () => {
   const { searchParams } = request.nextUrl;
   const { hours, since } = getHoursWindow(searchParams, 168);
   const limit = parsePositiveInt(searchParams.get("limit"), 50);
@@ -94,4 +96,5 @@ export async function GET(request: NextRequest) {
   });
 
   return NextResponse.json({ discoveries: result, periodHours: hours });
+});
 }

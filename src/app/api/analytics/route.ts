@@ -5,10 +5,12 @@ import { db } from "@/lib/db";
 import { requestLogs, servers } from "@/lib/schema";
 import { gte, sql, eq, and, isNotNull } from "drizzle-orm";
 import { getHoursWindow } from "@/lib/api/time-window";
+import { withAuth } from "@/lib/api/route-helpers";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  return withAuth(async () => {
   const { searchParams } = request.nextUrl;
   const { hours, since } = getHoursWindow(searchParams, 24);
   const granularity = sql.raw(hours <= 168 ? "'hour'" : "'day'");
@@ -192,4 +194,5 @@ export async function GET(request: NextRequest) {
           })
         : null,
   });
+});
 }

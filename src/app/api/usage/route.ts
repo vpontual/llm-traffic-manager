@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { modelEvents, servers } from "@/lib/schema";
 import { eq, gte, desc, asc, sql } from "drizzle-orm";
 import { getHoursWindow } from "@/lib/api/time-window";
+import { withAuth } from "@/lib/api/route-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ interface UsageRecord {
 }
 
 export async function GET(request: NextRequest) {
+  return withAuth(async () => {
   const { searchParams } = request.nextUrl;
   const { since } = getHoursWindow(searchParams, 168); // default 7 days
 
@@ -86,4 +88,5 @@ export async function GET(request: NextRequest) {
   );
 
   return NextResponse.json(usage);
+});
 }

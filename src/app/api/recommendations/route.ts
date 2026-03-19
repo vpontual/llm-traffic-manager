@@ -6,6 +6,7 @@ import { modelEvents, requestLogs, servers, serverSnapshots } from "@/lib/schema
 import { eq, gte, and, desc, sql } from "drizzle-orm";
 import { getHoursWindow } from "@/lib/api/time-window";
 import { findOversizedModels, type OversizedModelRecommendation, type ServerModelInfo } from "@/lib/oversized-models";
+import { withAuth } from "@/lib/api/route-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ interface RecommendationsResponse {
 }
 
 export async function GET(request: NextRequest) {
+  return withAuth(async () => {
   const { searchParams } = request.nextUrl;
   const { hours, since } = getHoursWindow(searchParams, 168);
 
@@ -229,4 +231,5 @@ export async function GET(request: NextRequest) {
     periodHours: hours,
     serverNames,
   } satisfies RecommendationsResponse);
+});
 }

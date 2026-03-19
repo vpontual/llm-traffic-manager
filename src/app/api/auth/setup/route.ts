@@ -24,12 +24,18 @@ export async function POST(request: NextRequest) {
 
   const { username, password } = validation.data;
 
-  const [user] = await db.insert(users).values({
+  // Use unique constraint to prevent race condition (two simultaneous setup requests)
+  const result = await db.insert(users).values({
     username,
     passwordHash: await hashPassword(password),
     isAdmin: true,
     apiKey: generateApiKey(),
-  }).returning();
+  }).onConflictDoNothing().returning();
+
+  if (result.length === 0) {
+    return NextResponse.json({ error: "Setup already completed" }, { status: 403 });
+  }
+  const user = result[0];
 
   const sessionId = await createSession(user.id);
 

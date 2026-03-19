@@ -42,6 +42,11 @@ setInterval(() => {
 // --- Endpoint classification ---
 
 // Endpoints where we extract a model field from the request body
+// Write operations that require API key when PROXY_PROTECT_WRITES is enabled
+const WRITE_ENDPOINTS = new Set(["/api/pull", "/api/delete", "/api/copy", "/api/create"]);
+const MAX_BODY_SIZE = 100 * 1024 * 1024; // 100MB body size limit
+const PROTECT_WRITES = process.env.PROXY_PROTECT_WRITES === "true" || process.env.PROXY_PROTECT_WRITES === "1";
+
 const MODEL_ENDPOINTS = new Set([
   "/api/generate",
   "/api/chat",
@@ -174,8 +179,14 @@ function getSourceIdentifier(req: http.IncomingMessage): { source: string; userI
 
 async function readBody(req: http.IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let totalSize = 0;
   for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    totalSize += buf.length;
+    if (totalSize > MAX_BODY_SIZE) {
+      throw new Error("Request body too large");
+    }
+    chunks.push(buf);
   }
   return Buffer.concat(chunks);
 }
@@ -458,7 +469,7 @@ async function handleRequest(
   const startTime = Date.now();
 
   // Refresh API key cache (cheap with TTL)
-  await refreshApiKeyCache();
+  // API key cache is refreshed on a background interval (see below)
 
   const { source, userId } = getSourceIdentifier(req);
   const path = (req.url ?? "/").split("?")[0];
@@ -513,6 +524,18 @@ async function handleRequest(
 
   // Extract model from request body
   const model = MODEL_ENDPOINTS.has(path) ? extractModel(body) : null;
+
+  // Write-protection: require valid API key for destructive operations
+  if (PROTECT_WRITES && WRITE_ENDPOINTS.has(path)) {
+    const apiKeyHeader = req.headers["x-ollama-api-key"];
+    const validKey = typeof apiKeyHeader === "string" && apiKeyCache.get(apiKeyHeader.trim());
+    if (!validKey) {
+      res.writeHead(401);
+      res.end(JSON.stringify({ error: "API key required for write operations. Set X-Ollama-Api-Key header." }));
+      logRequest(source, userId, model, path, method, null, null, 401, Date.now() - startTime);
+      return;
+    }
+  }
 
   // Route the request. Honor X-Ollama-Pin-Server header if present
   const pinHeader = req.headers["x-ollama-pin-server"];
@@ -632,7 +655,7 @@ async function handleRequest(
 
     if (model && recommendation) {
       responseBody.pull_recommendation = recommendation;
-      responseBody.hint = `To download this model, POST /api/pull with {"model": "${model}"}. The proxy will route it to ${recommendation.serverName} (${recommendation.freeVramGb} GB free of ${recommendation.totalRamGb} GB)`;
+      responseBody.hint = `To download this model, POST /api/pull with {"model": "${model}"}`;
 
       // Send debounced Telegram notification
       const lastNotified = modelNotFoundNotified.get(model) ?? 0;
@@ -680,6 +703,10 @@ async function main() {
   }
 
   const server = http.createServer(handleRequest);
+
+  // Background refresh of API key cache (every 30s, non-blocking)
+  refreshApiKeyCache().catch(() => {});
+  setInterval(() => refreshApiKeyCache().catch(() => {}), 30000);
 
   server.listen(PROXY_PORT, () => {
     console.log(`Ollama proxy listening on port ${PROXY_PORT}`);

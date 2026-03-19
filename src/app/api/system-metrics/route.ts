@@ -1,15 +1,17 @@
 // GET /api/system-metrics -- system metrics time-series for a server
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { systemMetrics } from "@/lib/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { getHoursWindow } from "@/lib/api/time-window";
 import { validateSystemMetricsServerId } from "@/lib/validations/system-metrics";
+import { withAuth } from "@/lib/api/route-helpers";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  return withAuth(async () => {
   const { searchParams } = new URL(request.url);
   const { since } = getHoursWindow(searchParams, 6);
   const serverIdValidation = validateSystemMetricsServerId(searchParams);
@@ -52,4 +54,5 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json(sampled);
+});
 }

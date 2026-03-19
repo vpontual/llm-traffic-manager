@@ -7,10 +7,12 @@ import { eq } from "drizzle-orm";
 import { getNextExecutions, detectConflicts } from "@/lib/cron-utils";
 import type { ScheduledExecution, ConflictGroup } from "@/lib/types";
 import { getHoursWindow } from "@/lib/api/time-window";
+import { withAuth } from "@/lib/api/route-helpers";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  return withAuth(async () => {
   const { searchParams } = request.nextUrl;
   const { hours } = getHoursWindow(searchParams, 24, 168);
 
@@ -97,4 +99,5 @@ export async function GET(request: NextRequest) {
     executions,
     conflicts,
   });
+});
 }

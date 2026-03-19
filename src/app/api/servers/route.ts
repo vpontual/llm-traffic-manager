@@ -5,10 +5,12 @@ import { db } from "@/lib/db";
 import { servers, serverSnapshots, modelEvents, systemMetrics } from "@/lib/schema";
 import { eq, desc, and } from "drizzle-orm";
 import type { ServerState, OllamaRunningModel, OllamaAvailableModel, SystemMetrics } from "@/lib/types";
+import { withAuth } from "@/lib/api/route-helpers";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  return withAuth(async () => {
   const allServers = await db.select().from(servers);
 
   const states: ServerState[] = await Promise.all(
@@ -96,4 +98,5 @@ export async function GET() {
   );
 
   return NextResponse.json(states);
+});
 }

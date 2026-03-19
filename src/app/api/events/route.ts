@@ -6,10 +6,12 @@ import { modelEvents, servers } from "@/lib/schema";
 import { desc, eq, gte } from "drizzle-orm";
 import type { ModelEvent } from "@/lib/types";
 import { getHoursWindow } from "@/lib/api/time-window";
+import { withAuth } from "@/lib/api/route-helpers";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  return withAuth(async () => {
   const { searchParams } = request.nextUrl;
   const { since } = getHoursWindow(searchParams, 24);
 
@@ -46,4 +48,5 @@ export async function GET(request: NextRequest) {
   }));
 
   return NextResponse.json(events);
+});
 }

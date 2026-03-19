@@ -16,10 +16,12 @@ import {
   toScheduledJobWithServerName,
 } from "@/lib/scheduled-jobs";
 import { validateCreateScheduledJobInput } from "@/lib/validations/scheduled-jobs";
+import { withAuth } from "@/lib/api/route-helpers";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  return withAuth(async () => {
   const { searchParams } = request.nextUrl;
   const enabledOnly = searchParams.get("enabled") === "true";
   const modelFilter = searchParams.get("model");
@@ -45,6 +47,7 @@ export async function GET(request: NextRequest) {
   const jobs: ScheduledJob[] = filteredRows.map(toScheduledJob);
 
   return NextResponse.json(jobs);
+});
 }
 
 export async function POST(request: NextRequest) {
