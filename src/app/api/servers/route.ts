@@ -24,7 +24,7 @@ export async function GET() {
         .limit(1);
 
       // Get load times for currently loaded models
-      const loadedModels = (latest?.loadedModels ?? []) as OllamaRunningModel[];
+      const loadedModels = latest?.loadedModels ?? [];
       const modelLoadTimes: Record<string, string> = {};
 
       for (const model of loadedModels) {
@@ -86,7 +86,7 @@ export async function GET() {
         isOnline: latest?.isOnline ?? false,
         ollamaVersion: latest?.ollamaVersion ?? null,
         loadedModels,
-        availableModels: (latest?.availableModels ?? []) as OllamaAvailableModel[],
+        availableModels: latest?.availableModels ?? [],
         totalVramUsed: latest?.totalVramUsed ?? 0,
         polledAt: latest?.polledAt?.toISOString() ?? null,
         modelLoadTimes,

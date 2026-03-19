@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
           detail: result.detail,
         })
         .where(eq(managementActions.id, action.id));
-    });
+    }).catch(err => console.error("[pull] Background status update failed:", err));
 
     return NextResponse.json({ actionId: action.id, status: "pending" });
   });

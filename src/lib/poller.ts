@@ -201,8 +201,8 @@ async function pollAllServers() {
           serverId: server.id,
           isOnline: result.isOnline,
           ollamaVersion: result.version,
-          loadedModels: result.runningModels as unknown[],
-          availableModels: result.availableModels as unknown[],
+          loadedModels: result.runningModels,
+          availableModels: result.availableModels,
           totalVramUsed: totalVramUsed,
         });
 

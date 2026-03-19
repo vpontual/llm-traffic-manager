@@ -1,3 +1,4 @@
+import type { OllamaRunningModel, OllamaAvailableModel } from "./types";
 import {
   pgTable,
   serial,
@@ -31,8 +32,8 @@ export const serverSnapshots = pgTable("server_snapshots", {
     .notNull(),
   isOnline: boolean("is_online").notNull(),
   ollamaVersion: text("ollama_version"),
-  loadedModels: jsonb("loaded_models").$type<unknown[]>().default([]),
-  availableModels: jsonb("available_models").$type<unknown[]>().default([]),
+  loadedModels: jsonb("loaded_models").$type<OllamaRunningModel[]>().default([]),
+  availableModels: jsonb("available_models").$type<OllamaAvailableModel[]>().default([]),
   totalVramUsed: bigint("total_vram_used", { mode: "number" }).default(0),
   polledAt: timestamp("polled_at").defaultNow().notNull(),
 });
