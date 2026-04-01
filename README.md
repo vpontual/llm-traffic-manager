@@ -22,6 +22,7 @@ The analytics page tracks request volume, success rates, latency percentiles, an
 - **Scheduled Jobs** - Cron-based model scheduling with conflict detection
 - **Multi-User Auth** - Cookie-based sessions with per-user notification preferences
 - **Telegram Alerts** - Server offline/online, overheating, low memory, and reboot notifications
+- **WAN Health Monitoring** - Detects internet outages, suppresses alerts during downtime, sends consolidated recovery notification
 - **Plugin System** - Extensible architecture for community plugins
 - **OpenAI API Compatible** - Supports `/v1/*` endpoints
 
@@ -64,6 +65,9 @@ POLL_INTERVAL=10
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 SOURCE_NAMES='{"172.28.0.1": "my-app"}'
+OFFLINE_THRESHOLD=5
+WAN_CHECK_INTERVAL=60
+WAN_OFFLINE_THRESHOLD=3
 ```
 
 ## Ports

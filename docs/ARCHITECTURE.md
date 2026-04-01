@@ -38,6 +38,17 @@ Started via Next.js instrumentation (`src/instrumentation.ts`). Runs every `POLL
 - Sends Telegram alerts with 30-minute cooldowns per server per alert type
 - Auto-cleans data older than 7 days
 
+### WAN Health Monitor
+
+Independent of the fleet poller, checks internet connectivity every `WAN_CHECK_INTERVAL` seconds (default 60) by TCP-probing `1.1.1.1:443` and `8.8.8.8:53`. Uses consecutive-failure gating (`WAN_OFFLINE_THRESHOLD`, default 3) to avoid false alarms from transient blips.
+
+During a WAN outage:
+- All server alerts (offline, temperature, memory, disk, reboot) are suppressed
+- All per-user Telegram notifications are suppressed
+- Outage start time is recorded
+
+On recovery, sends a single consolidated Telegram message with the outage duration and time range, instead of flooding with individual service-down/up alerts.
+
 ### Telegram Alerts
 
 Triggered after each poll cycle. Alert conditions:
