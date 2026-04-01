@@ -112,6 +112,20 @@ export async function checkWan(): Promise<void> {
   }
 }
 
+/** Start the WAN health monitor on its own interval (default 60s). */
+export function startWanMonitor(): void {
+  const intervalSec = readPositiveIntEnv("WAN_CHECK_INTERVAL", 60);
+
+  // Initial check
+  checkWan().catch((err) => console.error("[WAN] Initial check error:", err));
+
+  setInterval(() => {
+    checkWan().catch((err) => console.error("[WAN] Check error:", err));
+  }, intervalSec * 1000);
+
+  console.log("[WAN] Health monitor started (checking every " + intervalSec + "s)");
+}
+
 /** Returns true if WAN is currently considered up. */
 export function isWanUp(): boolean {
   return wanUp;

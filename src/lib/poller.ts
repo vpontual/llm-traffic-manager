@@ -1,4 +1,4 @@
-import { checkWan } from "./wan-health";
+import { startWanMonitor } from "./wan-health";
 // Fleet poller -- polls all Ollama servers, records snapshots, detects changes
 
 import { db } from "./db";
@@ -171,9 +171,6 @@ async function enrichDiscovery(modelName: string) {
 // --- Main poll loop ---
 
 async function pollAllServers() {
-  // Check WAN connectivity before polling fleet
-  await checkWan();
-
   const allServers = await db.select().from(servers);
 
   await Promise.all(
@@ -458,6 +455,9 @@ export async function startPoller() {
   cleanupInterval = setInterval(() => {
     cleanOldData().catch((err) => console.error('[Poller] Cleanup error:', err));
   }, 60 * 60 * 1000);
+
+  // Start WAN health monitor (own interval, independent of fleet polling)
+  startWanMonitor();
 }
 
 export { pollAllServers };
