@@ -1,3 +1,4 @@
+import { checkWan } from "./wan-health";
 // Fleet poller -- polls all Ollama servers, records snapshots, detects changes
 
 import { db } from "./db";
@@ -170,6 +171,9 @@ async function enrichDiscovery(modelName: string) {
 // --- Main poll loop ---
 
 async function pollAllServers() {
+  // Check WAN connectivity before polling fleet
+  await checkWan();
+
   const allServers = await db.select().from(servers);
 
   await Promise.all(

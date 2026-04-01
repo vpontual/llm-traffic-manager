@@ -1,3 +1,4 @@
+import { isWanUp } from "./wan-health";
 // Per-user Telegram notifications for server events (offline, online, reboot)
 
 import { db } from "./db";
@@ -13,6 +14,11 @@ interface ServerEventNotification {
 
 export async function notifySubscribedUsers(event: ServerEventNotification): Promise<void> {
   try {
+    // Suppress user notifications during WAN outage (Telegram unreachable)
+    if (!isWanUp()) {
+      console.log(`[UserNotify] Suppressed ${event.eventType} for ${event.serverName} — WAN outage in progress`);
+      return;
+    }
     // Build the filter for the relevant notify boolean
     const notifyColumn =
       event.eventType === "offline"

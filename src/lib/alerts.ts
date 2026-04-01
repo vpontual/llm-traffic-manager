@@ -1,3 +1,4 @@
+import { isWanUp } from "./wan-health";
 // Server health alerts -- monitors temps, disk, memory, reboots via Telegram
 
 import { isTelegramConfigured, sendTelegramMessage } from "./telegram";
@@ -33,6 +34,13 @@ export async function checkServerAlerts(
   metrics: MetricsAgentResponse | null
 ): Promise<void> {
   if (!isTelegramConfigured()) return;
+
+  // Suppress all alerts during WAN outage (Telegram unreachable, metrics may be stale)
+  if (!isWanUp()) {
+    const alertType = !isOnline ? "offline" : "metrics";
+    console.log(`[Alert] Suppressed ${alertType} for ${serverName} — WAN outage in progress`);
+    return;
+  }
 
   // Server offline
   if (!isOnline) {
