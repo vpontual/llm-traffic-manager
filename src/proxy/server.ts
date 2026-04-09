@@ -13,12 +13,15 @@ import {
   markRequestEnd,
   waitForServerSlot,
   getQueueLength,
+  recordSuccess,
+  recordError,
+  getErrorRate,
 } from "./router";
 import { db } from "../lib/db";
 import { requestLogs, users } from "../lib/schema";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { readJsonEnv } from "../lib/env";
-import { extractModel } from "./parse";
+import { extractModel, injectProxyDefaults } from "./parse";
 import { sendTelegramMessage } from "../lib/telegram";
 import { detectNativeConversion, convertRequestToNative, convertResponseToV1, createV1StreamTransform, type ConversionContext } from "./v1-compat";
 
@@ -62,11 +65,10 @@ const MODEL_ENDPOINTS = new Set([
   "/v1/embeddings",
 ]);
 
-// Endpoints where we aggregate responses from all servers
+// Aggregate endpoints
 const AGGREGATE_ENDPOINTS = new Set(["/api/tags", "/api/ps", "/v1/models"]);
 
 // Generation endpoints: slow operations where in-flight tracking matters.
-// When a server is busy with one of these, the router prefers other backends.
 const GENERATION_ENDPOINTS = new Set([
   "/api/generate",
   "/api/chat",
@@ -75,14 +77,23 @@ const GENERATION_ENDPOINTS = new Set([
 ]);
 
 // Endpoints where retry-on-model-not-found makes sense (read operations).
-// Write operations (pull, create, copy, delete) should NOT retry because they route
-// once and the target server handles the action.
 const RETRY_ENDPOINTS = new Set([
   "/api/generate",
   "/api/chat",
   "/api/embed",
   "/api/embeddings",
   "/api/show",
+  "/v1/chat/completions",
+  "/v1/completions",
+  "/v1/embeddings",
+]);
+
+// Endpoints where keep_alive and num_ctx injection applies
+const INJECTION_ENDPOINTS = new Set([
+  "/api/generate",
+  "/api/chat",
+  "/api/embed",
+  "/api/embeddings",
   "/v1/chat/completions",
   "/v1/completions",
   "/v1/embeddings",
@@ -131,12 +142,6 @@ const sourceNames = loadSourceNames();
 
 /**
  * Resolve a human-friendly source identifier from the incoming request.
- *
- * Priority:
- *   1. X-Ollama-Api-Key header (user identification)
- *   2. X-Ollama-Source header (services self-identify)
- *   3. SOURCE_NAMES env mapping for the IP
- *   4. Cleaned IP (strip ::ffff: IPv4-mapped prefix)
  */
 function getSourceIdentifier(req: http.IncomingMessage): { source: string; userId: number | null } {
   // 1. API key header for user identification
@@ -146,7 +151,6 @@ function getSourceIdentifier(req: http.IncomingMessage): { source: string; userI
     if (user) {
       return { source: user.username, userId: user.userId };
     }
-    // Invalid key, fall through to other methods
   }
 
   // 2. Explicit header: services can self-identify
@@ -248,13 +252,6 @@ function resolveProxyError(
 
 /**
  * Proxy a request to a target Ollama server, streaming the response back.
- *
- * When allowRetry is true, 404 and 500 responses are intercepted and checked
- * for retryable error patterns (Ollama's model-not-found on 404, or server
- * errors on 500 that indicate a transient loading failure). If detected, the
- * response is NOT written to `res` and retryable is set to true so the caller
- * can re-route to a different server. Connection errors (ECONNREFUSED etc.)
- * are also retryable.
  */
 function proxyRequest(
   targetHost: string,
@@ -298,14 +295,11 @@ function proxyRequest(
         proxyRes.on("end", () => {
           const responseBody = Buffer.concat(chunks).toString();
           if (statusCode === 404 && responseBody.includes("not found")) {
-            // Model not found on this server, retry on another
             resolve({ statusCode, retryable: true });
           } else if (statusCode === 500) {
-            // Server error (e.g. model failed to load, VRAM issue), retry on another
             console.log(`[proxy] Backend returned 500: ${responseBody.slice(0, 200)}`);
             resolve({ statusCode, retryable: true });
           } else {
-            // Non-retryable 404, forward to client
             res.writeHead(statusCode, proxyRes.headers);
             res.end(Buffer.concat(chunks));
             resolve({ statusCode, retryable: false });
@@ -475,9 +469,7 @@ async function handleAggregateModels(
 
 /**
  * Transparent model warmup: if the model isn't loaded on the target server,
- * send a tiny generation request to trigger the load. Waits for the load to
- * complete (no timeout — model loads can take minutes on Jetson devices).
- * This way individual services don't need their own warmup logic.
+ * send a tiny generation request to trigger the load.
  */
 async function ensureModelLoaded(
   host: string,
@@ -506,10 +498,8 @@ async function ensureModelLoaded(
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(body).toString(),
         },
-        // No timeout — model loads can take minutes, that's expected
       },
       (res) => {
-        // Drain the response
         res.on("data", () => {});
         res.on("end", () => {
           if (res.statusCode === 200) {
@@ -538,9 +528,6 @@ async function handleRequest(
   res: http.ServerResponse
 ) {
   const startTime = Date.now();
-
-  // Refresh API key cache (cheap with TTL)
-  // API key cache is refreshed on a background interval (see below)
 
   const { source, userId } = getSourceIdentifier(req);
   const path = (req.url ?? "/").split("?")[0];
@@ -579,6 +566,14 @@ async function handleRequest(
     body = await readBody(req);
   }
 
+  // Inject proxy defaults (keep_alive, num_ctx) on generation/embedding endpoints
+  let injectedDefaults: string[] = [];
+  if (INJECTION_ENDPOINTS.has(path) && body.length > 0) {
+    const result = injectProxyDefaults(body);
+    body = result.body;
+    injectedDefaults = result.injected;
+  }
+
   // Convert /v1/chat/completions with Ollama-specific fields (think, options)
   // to native /api/chat so the backend honors them. Response is converted back.
   let effectivePath = path;
@@ -612,9 +607,6 @@ async function handleRequest(
   const pinHeader = req.headers["x-ollama-pin-server"];
   const pinServerName = typeof pinHeader === "string" ? pinHeader.trim() : null;
 
-  // Retry logic: if a server returns model-not-found or is unreachable,
-  // exclude it and try the next best server. Only retry for model endpoints
-  // without a pin header (pinned requests go where they're told).
   const canRetry = model != null && !pinServerName && RETRY_ENDPOINTS.has(path);
   const excludeServerIds: number[] = [];
 
@@ -626,8 +618,6 @@ async function handleRequest(
     if (!route && model) {
       route = await routeModel(model, excludeServerIds, path);
     }
-    // If routeModel returned null after excluding servers, all candidates
-    // are exhausted, so don't fall back to pickAnyServer (it ignores exclusions)
     if (!route && excludeServerIds.length > 0) {
       break;
     }
@@ -642,12 +632,15 @@ async function handleRequest(
       return;
     }
 
+    // Log routing decision with injected defaults and health info
+    const errorRate = getErrorRate(route.serverId);
+    const healthTag = errorRate > 0 ? ` | health=${Math.round((1 - errorRate) * 100)}%` : "";
+    const injectTag = injectedDefaults.length > 0 ? ` | injected=[${injectedDefaults.join(",")}]` : "";
+
     console.log(
-      `[proxy] ${source} → ${route.serverName} (${route.host}) | ${method} ${path}${model ? ` | model=${model}` : ""} | reason=${route.reason}${attempt > 0 ? ` | retry=${attempt}` : ""}`
+      `[proxy] ${source} → ${route.serverName} (${route.host}) | ${method} ${path}${model ? ` | model=${model}` : ""} | reason=${route.reason}${healthTag}${injectTag}${attempt > 0 ? ` | retry=${attempt}` : ""}`
     );
 
-    // On the last attempt, don't allow retry. Let the response flow to the
-    // client even if it's an error, so they get a meaningful message.
     const allowRetry = canRetry && attempt < MAX_ROUTE_RETRIES;
     const trackBusy = GENERATION_ENDPOINTS.has(path);
 
@@ -658,9 +651,10 @@ async function handleRequest(
         console.log(`[proxy] ${source} queued for ${route.serverName} (${queueLen} ahead)`);
       }
       try {
-        await waitForServerSlot(route.serverId, 300000); // 5 min timeout
+        await waitForServerSlot(route.serverId, 300000);
       } catch (err) {
         console.log(`[proxy] Queue timeout for ${route.serverName}, returning 503`);
+        recordError(route.serverId);
         if (!res.headersSent) {
           res.writeHead(503);
           res.end(JSON.stringify({ error: `server ${route.serverName} busy, queue timeout` }));
@@ -672,11 +666,11 @@ async function handleRequest(
     if (trackBusy) markRequestStart(route.serverId);
 
     // Transparent warmup: if model needs to be loaded, trigger the load
-    // before forwarding the real request. No timeout on the warmup phase.
     if (trackBusy && model && !route.reason.startsWith("model_loaded")) {
       const warmedUp = await ensureModelLoaded(route.host, model, route.serverName, source);
       if (!warmedUp && allowRetry) {
         if (trackBusy) markRequestEnd(route.serverId);
+        recordError(route.serverId);
         excludeServerIds.push(route.serverId);
         clearOptimisticLoad(model, route.serverId);
         console.log(`[proxy] Warmup failed on ${route.serverName}, trying next server...`);
@@ -709,6 +703,13 @@ async function handleRequest(
       if (trackBusy) markRequestEnd(route.serverId);
     }
 
+    // Record health outcome
+    if (result.statusCode >= 200 && result.statusCode < 400) {
+      recordSuccess(route.serverId);
+    } else if (result.statusCode >= 500 || result.statusCode === 0) {
+      recordError(route.serverId);
+    }
+
     if (result.retryable) {
       const retryReason =
         result.statusCode === 404 ? "Model not found" :
@@ -717,6 +718,7 @@ async function handleRequest(
       console.log(
         `[proxy] ${retryReason} on ${route.serverName} (${route.host}), trying next server...`
       );
+      recordError(route.serverId);
       excludeServerIds.push(route.serverId);
       clearOptimisticLoad(model!, route.serverId);
       continue;
@@ -728,7 +730,7 @@ async function handleRequest(
     return;
   }
 
-  // All candidate servers exhausted. Return recommendation for pulling
+  // All candidate servers exhausted
   if (!res.headersSent) {
     const recommendation = model ? getRecommendedPullServer() : null;
     const responseBody: Record<string, unknown> = {
@@ -741,7 +743,6 @@ async function handleRequest(
       responseBody.pull_recommendation = recommendation;
       responseBody.hint = `To download this model, POST /api/pull with {"model": "${model}"}`;
 
-      // Send debounced Telegram notification
       const lastNotified = modelNotFoundNotified.get(model) ?? 0;
       if (Date.now() - lastNotified > NOTIFY_DEBOUNCE_MS) {
         modelNotFoundNotified.set(model, Date.now());
@@ -781,6 +782,11 @@ async function main() {
   console.log("Running database migrations...");
   await migrate(db, { migrationsFolder: "./drizzle" });
   console.log("Migrations applied");
+
+  // Log proxy defaults on startup
+  const keepAlive = process.env.PROXY_DEFAULT_KEEP_ALIVE ?? "30m";
+  const minCtx = process.env.PROXY_MIN_NUM_CTX ?? "8192";
+  console.log(`Proxy defaults: keep_alive=${keepAlive}, min_num_ctx=${minCtx}`);
 
   if (sourceNames.size > 0) {
     console.log(`Source name mappings: ${[...sourceNames.entries()].map(([ip, name]) => `${ip}\u2192${name}`).join(", ")}`);

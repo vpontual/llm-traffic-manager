@@ -1,7 +1,8 @@
 // Smart model router -- picks the best server for each request.
 //
 // Priority: model loaded in memory > model on disk (anti-churn) > most free VRAM.
-// Within each tier: highest-RAM server first, round-robin among ties.
+// Within each tier: fewest in-flight requests first, then highest-RAM, round-robin among ties.
+// Degraded servers (high error rate) are deprioritized within each tier.
 // Optimistic tracking bridges the gap between routing and poller confirmation.
 
 import { db } from "../lib/db";
@@ -10,6 +11,7 @@ import { eq, desc } from "drizzle-orm";
 import type { OllamaRunningModel, OllamaAvailableModel } from "../lib/types";
 import { selectRoute, freeVram, type ServerSnapshot } from "./route-logic";
 import { BusyRequestTracker } from "./busy-tracker";
+import { getDegradedServerIds, recordSuccess, recordError, getErrorRate } from "./health-tracker";
 import { unloadModel } from "../lib/ollama";
 
 
@@ -25,6 +27,9 @@ export async function waitForServerSlot(serverId: number, timeoutMs: number = 30
 export function getQueueLength(serverId: number): number {
   return busyTracker.getQueueLength(serverId);
 }
+
+// Re-export health tracker functions for server.ts
+export { recordSuccess, recordError, getErrorRate };
 
 
 // In-memory cache of server states, refreshed periodically from poller DB data
@@ -56,7 +61,14 @@ export function markRequestEnd(serverId: number): void {
   busyTracker.markEnd(serverId);
 }
 
-
+export function getInFlightCounts(): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const s of cachedStates) {
+    const count = busyTracker.getInFlightCount(s.id);
+    if (count > 0) counts.set(s.id, count);
+  }
+  return counts;
+}
 
 
 function getBusyServerIds(): number[] {
@@ -140,19 +152,12 @@ export interface RouteDecision {
  *    - If only one server has it, route there regardless
  * 3. Fallback: server with the most free VRAM (will need to pull the model)
  *
+ * Within each tier: prefer non-degraded servers with fewer in-flight requests.
+ *
  * @param excludeServerIds - Server IDs to skip (used by retry logic when a
  *   server returned model-not-found or was unreachable)
  */
 
-/**
- * Active Model Eviction: when a server needs to load a model but has idle
- * models hogging VRAM, force-unload them. A model is "idle" if it is loaded
- * on the server but has zero in-flight requests (per busy-tracker).
- *
- * Only evicts on Ollama backends (vLLM/generic don't support dynamic unloading).
- * Runs asynchronously -- the proxy doesn't wait for eviction to complete before
- * forwarding the request, but it gives Ollama a head start on freeing VRAM.
- */
 /**
  * Active Model Eviction: when a server needs to load a model but has idle
  * models hogging VRAM, force-unload them. A model is "idle" if it is loaded
@@ -217,6 +222,8 @@ export async function routeModel(
     lastRoutedServerId: lastRoutedServer.get(modelName) ?? null,
     roundRobinCounter,
     busyServerIds: getBusyServerIds(),
+    degradedServerIds: getDegradedServerIds(),
+    inFlightCounts: getInFlightCounts(),
     endpointPath,
   });
 

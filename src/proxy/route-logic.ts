@@ -22,14 +22,32 @@ export function freeVram(s: ServerSnapshot): number {
   return s.totalRamGb * 1024 * 1024 * 1024 - s.totalVramUsed;
 }
 
-/** Pick server by priority: highest RAM tier first, round-robin among ties */
+/**
+ * Pick server by priority: prefer servers with fewer in-flight requests,
+ * then highest RAM tier, then round-robin among ties.
+ */
 export function pickByPriority(
   candidates: ServerSnapshot[],
-  roundRobinCounter: number
+  roundRobinCounter: number,
+  inFlightCounts?: Map<number, number>
 ): { server: ServerSnapshot; nextCounter: number } {
-  const sorted = [...candidates].sort((a, b) => b.totalRamGb - a.totalRamGb);
+  const sorted = [...candidates].sort((a, b) => {
+    // Primary: fewer in-flight requests (less busy)
+    if (inFlightCounts) {
+      const aInFlight = inFlightCounts.get(a.id) ?? 0;
+      const bInFlight = inFlightCounts.get(b.id) ?? 0;
+      if (aInFlight !== bInFlight) return aInFlight - bInFlight;
+    }
+    // Secondary: more total RAM (bigger server)
+    return b.totalRamGb - a.totalRamGb;
+  });
   const topRam = sorted[0].totalRamGb;
-  const tied = sorted.filter((s) => s.totalRamGb === topRam);
+  const topInFlight = inFlightCounts?.get(sorted[0].id) ?? 0;
+  // Tie among servers with same in-flight count and RAM
+  const tied = sorted.filter((s) => {
+    const sInFlight = inFlightCounts?.get(s.id) ?? 0;
+    return sInFlight === topInFlight && s.totalRamGb === topRam;
+  });
   const server = tied[roundRobinCounter % tied.length];
   return { server, nextCounter: roundRobinCounter + 1 };
 }
@@ -40,8 +58,12 @@ export interface SelectRouteParams {
   optimisticServerId: number | null;
   lastRoutedServerId: number | null;
   roundRobinCounter: number;
-  /** Server IDs currently processing a generation request. */
+  /** Server IDs currently at max concurrency. */
   busyServerIds?: number[];
+  /** Server IDs with high recent error rates. */
+  degradedServerIds?: number[];
+  /** Current in-flight request count per server. */
+  inFlightCounts?: Map<number, number>;
   /** Request endpoint path (e.g. "/api/chat", "/v1/chat/completions"). */
   endpointPath?: string | null;
 }
@@ -59,9 +81,17 @@ export interface SelectRouteResult {
  * 1. Server with model loaded in memory (poller data or optimistic tracking)
  * 2. Server with model downloaded (available), preferring anti-churn rotation
  * 3. Fallback: server with most free VRAM
+ *
+ * Within each tier:
+ * - Degraded servers (high error rate) are deprioritized
+ * - Servers with fewer in-flight requests are preferred
  */
 export function selectRoute(params: SelectRouteParams): SelectRouteResult | null {
-  const { modelName, optimisticServerId, lastRoutedServerId, busyServerIds = [], endpointPath } = params;
+  const {
+    modelName, optimisticServerId, lastRoutedServerId,
+    busyServerIds = [], degradedServerIds = [], inFlightCounts,
+    endpointPath,
+  } = params;
   let counter = params.roundRobinCounter;
 
   // Filter servers by endpoint compatibility:
@@ -75,6 +105,16 @@ export function selectRoute(params: SelectRouteParams): SelectRouteResult | null
   if (onlineServers.length === 0) return null;
 
   const busySet = new Set(busyServerIds);
+  const degradedSet = new Set(degradedServerIds);
+
+  /**
+   * From a candidate list, prefer non-degraded servers. Only fall back to
+   * degraded ones if they're the only option.
+   */
+  function preferHealthy(candidates: ServerSnapshot[]): ServerSnapshot[] {
+    const healthy = candidates.filter((s) => !degradedSet.has(s.id));
+    return healthy.length > 0 ? healthy : candidates;
+  }
 
   // Servers with model loaded in memory (poller data OR optimistic)
   const withModelLoaded = onlineServers.filter(
@@ -87,24 +127,24 @@ export function selectRoute(params: SelectRouteParams): SelectRouteResult | null
   if (withModelLoaded.length > 0) {
     const loadedAndFree = withModelLoaded.filter((s) => !busySet.has(s.id));
     if (loadedAndFree.length > 0) {
-      // Sticky affinity: if lastRouted server is in the loaded+free set, prefer it.
-      // This keeps requests pinned to one server when multiple have the model loaded,
-      // preventing the model from expiring on the less-used server due to idle timeout.
+      const healthyLoaded = preferHealthy(loadedAndFree);
+
+      // Sticky affinity: if lastRouted server is in the loaded+free+healthy set, prefer it
       if (lastRoutedServerId != null) {
-        const sticky = loadedAndFree.find((s) => s.id === lastRoutedServerId);
+        const sticky = healthyLoaded.find((s) => s.id === lastRoutedServerId);
         if (sticky) {
           return { server: sticky, reason: "model_loaded_sticky", roundRobinCounter: counter };
         }
       }
 
-      const { server, nextCounter } = pickByPriority(loadedAndFree, counter);
+      const { server, nextCounter } = pickByPriority(healthyLoaded, counter, inFlightCounts);
       return { server, reason: "model_loaded", roundRobinCounter: nextCounter };
     }
 
     // All loaded servers are busy — queue on the loaded server rather than
-    // redirecting to a server that needs a model load (loading takes minutes
-    // on Jetson devices and blocks the slot the entire time).
-    const { server, nextCounter } = pickByPriority(withModelLoaded, counter);
+    // redirecting to a server that needs a model load
+    const healthyLoaded = preferHealthy(withModelLoaded);
+    const { server, nextCounter } = pickByPriority(healthyLoaded, counter, inFlightCounts);
     return { server, reason: "model_loaded_busy", roundRobinCounter: nextCounter };
   }
 
@@ -114,7 +154,7 @@ export function selectRoute(params: SelectRouteParams): SelectRouteResult | null
   );
 
   if (withModelAvailable.length > 0) {
-    let candidates = withModelAvailable;
+    let candidates = preferHealthy(withModelAvailable);
     let reason = "model_available";
 
     // Anti-churn: if multiple servers have the model, avoid the one that last
@@ -127,11 +167,12 @@ export function selectRoute(params: SelectRouteParams): SelectRouteResult | null
       }
     }
 
-    const { server, nextCounter } = pickByPriority(candidates, counter);
+    const { server, nextCounter } = pickByPriority(candidates, counter, inFlightCounts);
     return { server, reason, roundRobinCounter: nextCounter };
   }
 
   // 3. Fall back to server with most free VRAM
-  const { server, nextCounter } = pickByPriority(onlineServers, counter);
+  const healthyFallback = preferHealthy(onlineServers);
+  const { server, nextCounter } = pickByPriority(healthyFallback, counter, inFlightCounts);
   return { server, reason: "fallback_most_vram", roundRobinCounter: nextCounter };
 }
