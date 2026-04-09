@@ -242,8 +242,8 @@ test("selectRoute skips busy loaded server when model available elsewhere", () =
     busyServerIds: [dgx.id],
   });
   assert.ok(result);
-  assert.equal(result.server.name, "agx");
-  assert.equal(result.reason, "model_available_busy_redirect");
+  assert.equal(result.server.name, "dgx");
+  assert.equal(result.reason, "model_loaded_busy");
 });
 
 test("selectRoute falls back to busy loaded server when no alternatives", () => {

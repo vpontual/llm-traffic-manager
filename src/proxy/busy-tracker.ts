@@ -1,12 +1,34 @@
 /**
  * Tracks in-flight generation requests per server.
  * A server is considered "busy" when it has at least one active request.
+ * Safety: slots auto-release after MAX_SLOT_HOLD_MS to prevent permanent leaks.
  */
+const MAX_SLOT_HOLD_MS = 300000; // 5 minutes — no generation should take longer
+
 export class BusyRequestTracker {
   private readonly inFlight = new Map<number, number>();
+  private readonly slotTimers = new Map<number, ReturnType<typeof setTimeout>[]>();
 
   markStart(serverId: number): void {
     this.inFlight.set(serverId, (this.inFlight.get(serverId) ?? 0) + 1);
+
+    // Safety timer: auto-release this slot if markEnd is never called
+    const timer = setTimeout(() => {
+      console.warn(`[busy-tracker] Auto-releasing stuck slot on server ${serverId} after ${MAX_SLOT_HOLD_MS / 1000}s`);
+      this.markEnd(serverId);
+      // Remove this timer from the list
+      const timers = this.slotTimers.get(serverId);
+      if (timers) {
+        const idx = timers.indexOf(timer);
+        if (idx !== -1) timers.splice(idx, 1);
+        if (timers.length === 0) this.slotTimers.delete(serverId);
+      }
+    }, MAX_SLOT_HOLD_MS);
+
+    if (!this.slotTimers.has(serverId)) {
+      this.slotTimers.set(serverId, []);
+    }
+    this.slotTimers.get(serverId)!.push(timer);
   }
 
   markEnd(serverId: number): void {
@@ -15,6 +37,13 @@ export class BusyRequestTracker {
       this.inFlight.delete(serverId);
     } else {
       this.inFlight.set(serverId, count - 1);
+    }
+
+    // Clear the oldest safety timer for this server
+    const timers = this.slotTimers.get(serverId);
+    if (timers && timers.length > 0) {
+      clearTimeout(timers.shift()!);
+      if (timers.length === 0) this.slotTimers.delete(serverId);
     }
 
     // Notify the next waiter in the queue for this server

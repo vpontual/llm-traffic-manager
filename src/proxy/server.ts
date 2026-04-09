@@ -280,7 +280,15 @@ function proxyRequest(
       timeout: 600000, // 10 min timeout for long generations
     };
 
+    // First-byte timeout: if no response headers arrive within 90s, the backend
+    // is likely loading a model. Abort early to release the busy slot faster.
+    let firstByteTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      firstByteTimer = null;
+      proxyReq.destroy(new Error("first-byte timeout: no response in 90s"));
+    }, 90000);
+
     const proxyReq = http.request(options, (proxyRes) => {
+      if (firstByteTimer) { clearTimeout(firstByteTimer); firstByteTimer = null; }
       const statusCode = proxyRes.statusCode ?? 500;
 
       // In retry mode, intercept error responses to check for retryable patterns
@@ -337,9 +345,13 @@ function proxyRequest(
       }
     });
 
-    proxyReq.on("error", (err) => resolveProxyError(err, res, allowRetry, resolve));
+    proxyReq.on("error", (err) => {
+      if (firstByteTimer) { clearTimeout(firstByteTimer); firstByteTimer = null; }
+      resolveProxyError(err, res, allowRetry, resolve);
+    });
 
     proxyReq.on("timeout", () => {
+      if (firstByteTimer) { clearTimeout(firstByteTimer); firstByteTimer = null; }
       proxyReq.destroy();
       if (!res.headersSent) {
         res.writeHead(504);
@@ -458,6 +470,65 @@ async function handleAggregateModels(
     "content-length": Buffer.byteLength(body).toString(),
   });
   res.end(body);
+}
+
+
+/**
+ * Transparent model warmup: if the model isn't loaded on the target server,
+ * send a tiny generation request to trigger the load. Waits for the load to
+ * complete (no timeout — model loads can take minutes on Jetson devices).
+ * This way individual services don't need their own warmup logic.
+ */
+async function ensureModelLoaded(
+  host: string,
+  model: string,
+  serverName: string,
+  source: string
+): Promise<boolean> {
+  const body = JSON.stringify({
+    model,
+    prompt: "hi",
+    stream: false,
+    options: { num_predict: 1 },
+  });
+
+  console.log(`[proxy] Warming up ${model} on ${serverName} for ${source}...`);
+
+  return new Promise<boolean>((resolve) => {
+    const [hostname, port] = host.split(":");
+    const req = http.request(
+      {
+        hostname,
+        port: parseInt(port || "11434", 10),
+        path: "/api/generate",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body).toString(),
+        },
+        // No timeout — model loads can take minutes, that's expected
+      },
+      (res) => {
+        // Drain the response
+        res.on("data", () => {});
+        res.on("end", () => {
+          if (res.statusCode === 200) {
+            console.log(`[proxy] ${model} ready on ${serverName}`);
+            resolve(true);
+          } else {
+            console.warn(`[proxy] Warmup failed for ${model} on ${serverName}: ${res.statusCode}`);
+            resolve(false);
+          }
+        });
+      }
+    );
+    req.on("error", (err) => {
+      console.warn(`[proxy] Warmup error for ${model} on ${serverName}: ${err.message}`);
+      resolve(false);
+    });
+    req.write(body);
+    req.end();
+  });
 }
 
 // --- Main request handler ---
@@ -599,6 +670,19 @@ async function handleRequest(
       }
     }
     if (trackBusy) markRequestStart(route.serverId);
+
+    // Transparent warmup: if model needs to be loaded, trigger the load
+    // before forwarding the real request. No timeout on the warmup phase.
+    if (trackBusy && model && !route.reason.startsWith("model_loaded")) {
+      const warmedUp = await ensureModelLoaded(route.host, model, route.serverName, source);
+      if (!warmedUp && allowRetry) {
+        if (trackBusy) markRequestEnd(route.serverId);
+        excludeServerIds.push(route.serverId);
+        clearOptimisticLoad(model, route.serverId);
+        console.log(`[proxy] Warmup failed on ${route.serverName}, trying next server...`);
+        continue;
+      }
+    }
 
     let result: ProxyResult;
     try {

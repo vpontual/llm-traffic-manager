@@ -101,16 +101,9 @@ export function selectRoute(params: SelectRouteParams): SelectRouteResult | null
       return { server, reason: "model_loaded", roundRobinCounter: nextCounter };
     }
 
-    // All loaded servers are busy — look for a free server with model on disk
-    const freeWithModelAvailable = onlineServers.filter(
-      (s) => !busySet.has(s.id) && s.availableModels.some((m) => m.name === modelName)
-    );
-    if (freeWithModelAvailable.length > 0) {
-      const { server, nextCounter } = pickByPriority(freeWithModelAvailable, counter);
-      return { server, reason: "model_available_busy_redirect", roundRobinCounter: nextCounter };
-    }
-
-    // No free alternatives — queue on busy loaded server (better than pulling fresh)
+    // All loaded servers are busy — queue on the loaded server rather than
+    // redirecting to a server that needs a model load (loading takes minutes
+    // on Jetson devices and blocks the slot the entire time).
     const { server, nextCounter } = pickByPriority(withModelLoaded, counter);
     return { server, reason: "model_loaded_busy", roundRobinCounter: nextCounter };
   }

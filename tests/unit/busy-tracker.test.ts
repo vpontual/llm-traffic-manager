@@ -138,7 +138,7 @@ test("getFullServerIds treats vllm-like limit correctly", () => {
   assert.deepEqual(tracker.getFullServerIds(limits), [1]);
 });
 
-test("busy tracking lifecycle redirects while busy and restores loaded preference when free", () => {
+test("busy tracking lifecycle queues on loaded server while busy and serves from it when free", () => {
   const tracker = new BusyRequestTracker();
   const loaded = makeServer({
     id: 1,
@@ -163,8 +163,8 @@ test("busy tracking lifecycle redirects while busy and restores loaded preferenc
     busyServerIds: tracker.getBusyServerIds(),
   });
   assert.ok(whileBusy);
-  assert.equal(whileBusy.server.id, available.id);
-  assert.equal(whileBusy.reason, "model_available_busy_redirect");
+  assert.equal(whileBusy.server.id, loaded.id);
+  assert.equal(whileBusy.reason, "model_loaded_busy");
 
   tracker.markEnd(loaded.id);
   const afterComplete = selectRoute({
