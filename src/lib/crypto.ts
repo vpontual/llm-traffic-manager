@@ -1,6 +1,7 @@
 // Cryptographic utilities -- password hashing and API key generation
 
 import bcrypt from "bcryptjs";
+import { randomUUID } from "node:crypto";
 
 const BCRYPT_ROUNDS = 10;
 
@@ -13,5 +14,5 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 export function generateApiKey(): string {
-  return crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+  return randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
 }

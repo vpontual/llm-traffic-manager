@@ -11,6 +11,7 @@ import type { ServerConfig, OllamaRunningModel, OllamaAvailableModel } from "./t
 import { checkServerAlerts } from "./alerts";
 import { notifySubscribedUsers } from "./user-notifications";
 import { readJsonEnv, readPositiveIntEnv } from "./env";
+import { computeSnapshotSignature } from "./snapshot-dedup";
 import { fetchModelInfo, getInfoFetchStatus } from "./model-info";
 
 // --- In-memory state for diffing between polls --- loaded models between polls
@@ -18,6 +19,9 @@ const previousModels = new Map<number, Set<string>>();
 
 // In-memory state for detecting server lifecycle transitions
 const previousOnline = new Map<number, boolean>();
+
+// Dedup cache: last snapshot signature + row id per server, to skip redundant inserts
+const previousSnapshot = new Map<number, { signature: string; id: number }>();
 const previousBootSet = new Map<number, Set<string>>();
 
 // Consecutive failure counter: only declare offline after N consecutive failed polls
@@ -198,14 +202,48 @@ async function pollAllServers() {
           0
         );
 
-        await db.insert(serverSnapshots).values({
-          serverId: server.id,
+        const snapshotSignature = computeSnapshotSignature({
           isOnline: result.isOnline,
           ollamaVersion: result.version,
           loadedModels: result.runningModels,
           availableModels: result.availableModels,
-          totalVramUsed: totalVramUsed,
         });
+        const cachedSnapshot = previousSnapshot.get(server.id);
+        if (cachedSnapshot && cachedSnapshot.signature === snapshotSignature) {
+          const updated = await db
+            .update(serverSnapshots)
+            .set({ polledAt: new Date() })
+            .where(eq(serverSnapshots.id, cachedSnapshot.id))
+            .returning({ id: serverSnapshots.id });
+          // Row may have been pruned by retention; fall back to INSERT if so
+          if (updated.length === 0) {
+            const [inserted] = await db
+              .insert(serverSnapshots)
+              .values({
+                serverId: server.id,
+                isOnline: result.isOnline,
+                ollamaVersion: result.version,
+                loadedModels: result.runningModels,
+                availableModels: result.availableModels,
+                totalVramUsed: totalVramUsed,
+              })
+              .returning({ id: serverSnapshots.id });
+            previousSnapshot.set(server.id, { signature: snapshotSignature, id: inserted.id });
+          }
+        } else {
+          const [inserted] = await db
+            .insert(serverSnapshots)
+            .values({
+              serverId: server.id,
+              isOnline: result.isOnline,
+              ollamaVersion: result.version,
+              loadedModels: result.runningModels,
+              availableModels: result.availableModels,
+              totalVramUsed: totalVramUsed,
+            })
+            .returning({ id: serverSnapshots.id });
+          previousSnapshot.set(server.id, { signature: snapshotSignature, id: inserted.id });
+        }
 
         // Check for new models across the fleet
         await checkForNewModels(

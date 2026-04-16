@@ -31,6 +31,7 @@
     "src/lib/registry-check.ts",
     "src/lib/oversized-models.ts",
     "src/lib/model-info-parse.ts",
+    "src/lib/snapshot-dedup.ts",
     "src/lib/service-affinity.ts"
   ],
   "exclude": [

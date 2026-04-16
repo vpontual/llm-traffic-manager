@@ -24,6 +24,8 @@ export class BusyRequestTracker {
         if (timers.length === 0) this.slotTimers.delete(serverId);
       }
     }, MAX_SLOT_HOLD_MS);
+    // Unref so this safety timer never blocks process exit (e.g. in tests).
+    if (typeof timer.unref === "function") timer.unref();
 
     if (!this.slotTimers.has(serverId)) {
       this.slotTimers.set(serverId, []);
