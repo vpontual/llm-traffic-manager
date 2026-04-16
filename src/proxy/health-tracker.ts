@@ -54,7 +54,9 @@ export function getErrorRate(serverId: number): number {
  */
 export function getDegradedServerIds(): number[] {
   const degraded: number[] = [];
-  for (const serverId of outcomes.keys()) {
+  // Snapshot keys first — getErrorRate() calls pruneOld() which may delete keys,
+  // and we must not mutate the map we are iterating.
+  for (const serverId of [...outcomes.keys()]) {
     if (getErrorRate(serverId) >= DEGRADE_THRESHOLD) {
       degraded.push(serverId);
     }
@@ -67,7 +69,7 @@ export function getDegradedServerIds(): number[] {
  */
 export function getHealthSummary(): Record<number, { total: number; errors: number; rate: number }> {
   const summary: Record<number, { total: number; errors: number; rate: number }> = {};
-  for (const serverId of outcomes.keys()) {
+  for (const serverId of [...outcomes.keys()]) {
     const fresh = pruneOld(serverId);
     const errors = fresh.filter((e) => !e.success).length;
     summary[serverId] = {

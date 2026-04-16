@@ -37,7 +37,7 @@ const serverConfigMap = new Map<string, ServerConfig>();
 // --- Server configuration ---
 
 function getServerConfigs(): ServerConfig[] {
-  const parsed = readJsonEnv<ServerConfig[]>("OLLAMA_SERVERS");
+  const parsed = readJsonEnv<unknown>("OLLAMA_SERVERS");
   if (!parsed) {
     console.error("OLLAMA_SERVERS env var not set");
     return [];
@@ -47,7 +47,28 @@ function getServerConfigs(): ServerConfig[] {
     return [];
   }
 
-  return parsed;
+  const valid: ServerConfig[] = [];
+  for (const [i, entry] of parsed.entries()) {
+    if (!entry || typeof entry !== "object") {
+      console.error(`OLLAMA_SERVERS[${i}] must be an object, skipping`);
+      continue;
+    }
+    const e = entry as Record<string, unknown>;
+    if (typeof e.name !== "string" || !e.name.trim()) {
+      console.error(`OLLAMA_SERVERS[${i}] missing or invalid "name", skipping`);
+      continue;
+    }
+    if (typeof e.host !== "string" || !e.host.trim()) {
+      console.error(`OLLAMA_SERVERS[${i}] (${(e.name as string)}) missing or invalid "host", skipping`);
+      continue;
+    }
+    if (typeof e.ramGb !== "number" || !Number.isFinite(e.ramGb) || e.ramGb <= 0) {
+      console.error(`OLLAMA_SERVERS[${i}] (${(e.name as string)}) missing or invalid "ramGb", skipping`);
+      continue;
+    }
+    valid.push(entry as ServerConfig);
+  }
+  return valid;
 }
 
 async function ensureServersSeeded(configs: ServerConfig[]) {

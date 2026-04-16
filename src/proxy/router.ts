@@ -206,7 +206,7 @@ async function evictIdleModelsIfNeeded(
       `[evict] Unloading idle model ${model.name} from ${targetServer.name} ` +
       `(${sizeGb}GB) to make room for ${requestedModel}`
     );
-    unloadModel(targetServer.host, model.name).catch(() => {});
+    unloadModel(targetServer.host, model.name).catch((err) => console.warn(`[evict] unload ${model.name} on ${targetServer.name} failed:`, err instanceof Error ? err.message : err));
   }
 }
 
