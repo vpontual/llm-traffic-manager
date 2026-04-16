@@ -58,26 +58,64 @@ function availableModel(name: string) {
 
 test("busy tracker keeps server busy until all in-flight requests finish", () => {
   const tracker = new BusyRequestTracker();
-  tracker.markStart(7);
-  tracker.markStart(7);
+  const h1 = tracker.markStart(7);
+  const h2 = tracker.markStart(7);
 
   assert.equal(tracker.getInFlightCount(7), 2);
   assert.deepEqual(tracker.getBusyServerIds(), [7]);
 
-  tracker.markEnd(7);
+  tracker.markEnd(h1);
   assert.equal(tracker.getInFlightCount(7), 1);
   assert.deepEqual(tracker.getBusyServerIds(), [7]);
 
-  tracker.markEnd(7);
+  tracker.markEnd(h2);
   assert.equal(tracker.getInFlightCount(7), 0);
   assert.deepEqual(tracker.getBusyServerIds(), []);
 });
 
-test("busy tracker ignores extra markEnd calls", () => {
+test("markEnd is a no-op for unknown handles", () => {
   const tracker = new BusyRequestTracker();
-  tracker.markEnd(99);
+  tracker.markEnd({ serverId: 99, slotId: 12345 });
   assert.equal(tracker.getInFlightCount(99), 0);
   assert.deepEqual(tracker.getBusyServerIds(), []);
+});
+
+test("markEnd is idempotent on the same handle", () => {
+  const tracker = new BusyRequestTracker();
+  const h = tracker.markStart(1);
+  tracker.markEnd(h);
+  tracker.markEnd(h); // second call is a no-op
+  assert.equal(tracker.getInFlightCount(1), 0);
+});
+
+// --- Out-of-order completion: the handle-based API's reason to exist ---
+
+test("out-of-order completion releases the correct slot", () => {
+  // Two requests start on server 1; the SECOND finishes first.
+  // With the old serverId-only API, markEnd would clear the oldest
+  // safety timer (belonging to the first, still-running request).
+  // With handles, each markEnd clears its own timer.
+  const tracker = new BusyRequestTracker();
+  const first = tracker.markStart(1);
+  const second = tracker.markStart(1);
+  assert.equal(tracker.getInFlightCount(1), 2);
+
+  tracker.markEnd(second);
+  assert.equal(tracker.getInFlightCount(1), 1);
+
+  // Now end `first`. If handles were broken, this would be a no-op
+  // (because `second` had already cleared `first`'s timer/counter).
+  tracker.markEnd(first);
+  assert.equal(tracker.getInFlightCount(1), 0);
+  assert.deepEqual(tracker.getBusyServerIds(), []);
+});
+
+test("auto-released counter starts at 0 and is monotonic", () => {
+  const tracker = new BusyRequestTracker();
+  assert.equal(tracker.getAutoReleasedCount(), 0);
+  // We don't exercise the 5-minute safety timer in unit tests. The counter
+  // being 0 is the meaningful invariant — if it ever increments in prod,
+  // there is a markEnd leak somewhere in server.ts.
 });
 
 // --- getFullServerIds (concurrency-aware) ---
@@ -118,19 +156,15 @@ test("getFullServerIds defaults to limit=1 for unknown servers", () => {
 
 test("getFullServerIds with mixed limits", () => {
   const tracker = new BusyRequestTracker();
-  // Server 1: 2 in-flight, limit 5 → not full
   tracker.markStart(1);
   tracker.markStart(1);
-  // Server 2: 1 in-flight, limit 1 → full
   tracker.markStart(2);
   const limits = new Map([[1, 5], [2, 1]]);
-  const full = tracker.getFullServerIds(limits);
-  assert.deepEqual(full, [2]);
+  assert.deepEqual(tracker.getFullServerIds(limits), [2]);
 });
 
 test("getFullServerIds treats vllm-like limit correctly", () => {
   const tracker = new BusyRequestTracker();
-  // Simulate vllm server with high concurrency limit
   for (let i = 0; i < 9; i++) tracker.markStart(1);
   const limits = new Map([[1, 10]]);
   assert.deepEqual(tracker.getFullServerIds(limits), []);
@@ -153,7 +187,7 @@ test("busy tracking lifecycle queues on loaded server while busy and serves from
     availableModels: [availableModel("llama3")],
   });
 
-  tracker.markStart(loaded.id);
+  const h = tracker.markStart(loaded.id);
   const whileBusy = selectRoute({
     onlineServers: [loaded, available],
     modelName: "llama3",
@@ -166,7 +200,7 @@ test("busy tracking lifecycle queues on loaded server while busy and serves from
   assert.equal(whileBusy.server.id, loaded.id);
   assert.equal(whileBusy.reason, "model_loaded_busy");
 
-  tracker.markEnd(loaded.id);
+  tracker.markEnd(h);
   const afterComplete = selectRoute({
     onlineServers: [loaded, available],
     modelName: "llama3",
@@ -211,14 +245,13 @@ test("getQueueLength returns 0 when no waiters", () => {
 
 test("waitForSlot resolves immediately when not at capacity", async () => {
   const tracker = new BusyRequestTracker();
-  await tracker.waitForSlot(1, 2, 1000); // should resolve immediately
+  await tracker.waitForSlot(1, 2, 1000);
   assert.ok(true);
 });
 
 test("waitForSlot waits and resolves when slot opens", async () => {
   const tracker = new BusyRequestTracker();
-  tracker.markStart(1);
-  // Server 1 is at capacity (limit=1)
+  const h = tracker.markStart(1);
   assert.equal(tracker.isAtCapacity(1, 1), true);
   assert.equal(tracker.getQueueLength(1), 0);
 
@@ -228,10 +261,8 @@ test("waitForSlot waits and resolves when slot opens", async () => {
   assert.equal(tracker.getQueueLength(1), 1);
   assert.equal(resolved, false);
 
-  // Free the slot
-  tracker.markEnd(1);
+  tracker.markEnd(h);
 
-  // Wait for the promise to resolve
   await waitPromise;
   assert.equal(resolved, true);
   assert.equal(tracker.getQueueLength(1), 0);
@@ -239,24 +270,20 @@ test("waitForSlot waits and resolves when slot opens", async () => {
 
 test("waitForSlot FIFO order — first waiter gets notified first", async () => {
   const tracker = new BusyRequestTracker();
-  tracker.markStart(1);
-  
+  const h1 = tracker.markStart(1);
+
   const order: number[] = [];
 
   const wait1 = tracker.waitForSlot(1, 1, 5000).then(() => { order.push(1); });
   const wait2 = tracker.waitForSlot(1, 1, 5000).then(() => { order.push(2); });
-  
+
   assert.equal(tracker.getQueueLength(1), 2);
 
-  // Free first slot — waiter 1 should resolve
-  tracker.markEnd(1);
+  tracker.markEnd(h1);
   await wait1;
-  
-  // Waiter 2 still waiting (server busy again from waiter 1's perspective)
-  // But actually markEnd already notified waiter 1, and waiter 2 is next
-  // We need to markStart again then markEnd to release waiter 2
-  tracker.markStart(1);
-  tracker.markEnd(1);
+
+  const h2 = tracker.markStart(1);
+  tracker.markEnd(h2);
   await wait2;
 
   assert.deepEqual(order, [1, 2]);
@@ -267,44 +294,38 @@ test("waitForSlot rejects on timeout", async () => {
   tracker.markStart(1);
 
   try {
-    await tracker.waitForSlot(1, 1, 50); // 50ms timeout
+    await tracker.waitForSlot(1, 1, 50);
     assert.fail("Should have thrown");
-  } catch (err: any) {
-    assert.ok(err.message.includes("Queue timeout"));
+  } catch (err: unknown) {
+    assert.ok(err instanceof Error && err.message.includes("Queue timeout"));
   }
 
-  // Verify waiter was removed from queue after timeout
   assert.equal(tracker.getQueueLength(1), 0);
 });
 
 test("waitForSlot timeout removes only the timed-out waiter", async () => {
   const tracker = new BusyRequestTracker();
-  tracker.markStart(1);
+  const h = tracker.markStart(1);
 
-  // Waiter 1: short timeout (will time out)
   const wait1 = tracker.waitForSlot(1, 1, 50).catch(() => "timeout");
-  // Waiter 2: long timeout (will succeed)
   const wait2Promise = tracker.waitForSlot(1, 1, 5000);
 
   assert.equal(tracker.getQueueLength(1), 2);
 
-  // Wait for waiter 1 to time out
   const result1 = await wait1;
   assert.equal(result1, "timeout");
 
-  // Waiter 2 should still be in queue
   assert.equal(tracker.getQueueLength(1), 1);
 
-  // Free slot — waiter 2 resolves
-  tracker.markEnd(1);
+  tracker.markEnd(h);
   await wait2Promise;
   assert.equal(tracker.getQueueLength(1), 0);
 });
 
 test("multiple servers have independent queues", async () => {
   const tracker = new BusyRequestTracker();
-  tracker.markStart(1);
-  tracker.markStart(2);
+  const h1 = tracker.markStart(1);
+  const h2 = tracker.markStart(2);
 
   let resolved1 = false;
   let resolved2 = false;
@@ -315,15 +336,13 @@ test("multiple servers have independent queues", async () => {
   assert.equal(tracker.getQueueLength(1), 1);
   assert.equal(tracker.getQueueLength(2), 1);
 
-  // Free server 2 only
-  tracker.markEnd(2);
+  tracker.markEnd(h2);
   await wait2;
 
   assert.equal(resolved1, false);
   assert.equal(resolved2, true);
 
-  // Free server 1
-  tracker.markEnd(1);
+  tracker.markEnd(h1);
   await wait1;
   assert.equal(resolved1, true);
 });

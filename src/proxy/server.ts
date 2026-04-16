@@ -2,6 +2,7 @@
 // aggregates multi-server responses, and logs all traffic.
 
 import http from "node:http";
+import type { SlotHandle } from "./busy-tracker";
 import {
   routeModel,
   pickAnyServer,
@@ -11,6 +12,9 @@ import {
   getRecommendedPullServer,
   markRequestStart,
   markRequestEnd,
+  getAutoReleasedCount,
+  getInFlightCounts,
+  getQueueLengths,
   waitForServerSlot,
   getQueueLength,
   recordSuccess,
@@ -663,13 +667,13 @@ async function handleRequest(
         return;
       }
     }
-    if (trackBusy) markRequestStart(route.serverId);
+    const slotHandle: SlotHandle | null = trackBusy ? markRequestStart(route.serverId) : null;
 
     // Transparent warmup: if model needs to be loaded, trigger the load
     if (trackBusy && model && !route.reason.startsWith("model_loaded")) {
       const warmedUp = await ensureModelLoaded(route.host, model, route.serverName, source);
       if (!warmedUp && allowRetry) {
-        if (trackBusy) markRequestEnd(route.serverId);
+        if (slotHandle) markRequestEnd(slotHandle);
         recordError(route.serverId);
         excludeServerIds.push(route.serverId);
         clearOptimisticLoad(model, route.serverId);
@@ -700,7 +704,7 @@ async function handleRequest(
       }
       result = { statusCode: 502, retryable: false };
     } finally {
-      if (trackBusy) markRequestEnd(route.serverId);
+      if (slotHandle) markRequestEnd(slotHandle);
     }
 
     // Record health outcome
@@ -797,6 +801,27 @@ async function main() {
   // Background refresh of API key cache (every 30s, non-blocking)
   refreshApiKeyCache().catch(() => {});
   setInterval(() => refreshApiKeyCache().catch(() => {}), 30000);
+
+  // Periodic health summary: dump routing-tracker state so incidents have a trail.
+  // Cadence: 5 minutes. Only logs when there is something to report.
+  setInterval(() => {
+    const inFlight = getInFlightCounts();
+    const queues = getQueueLengths();
+    const autoReleased = getAutoReleasedCount();
+    const parts: string[] = [];
+    if (inFlight.size > 0) {
+      parts.push("in-flight=" + [...inFlight].map(([id, n]) => id + ":" + n).join(","));
+    }
+    if (queues.size > 0) {
+      parts.push("queues=" + [...queues].map(([id, n]) => id + ":" + n).join(","));
+    }
+    if (autoReleased > 0) {
+      parts.push("auto-released-total=" + autoReleased);
+    }
+    if (parts.length > 0) {
+      console.log("[health-summary] " + parts.join(" "));
+    }
+  }, 5 * 60 * 1000).unref();
 
   server.listen(PROXY_PORT, () => {
     console.log(`Ollama proxy listening on port ${PROXY_PORT}`);

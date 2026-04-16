@@ -10,7 +10,7 @@ import { servers, serverSnapshots } from "../lib/schema";
 import { eq, desc } from "drizzle-orm";
 import type { OllamaRunningModel, OllamaAvailableModel } from "../lib/types";
 import { selectRoute, freeVram, type ServerSnapshot } from "./route-logic";
-import { BusyRequestTracker } from "./busy-tracker";
+import { BusyRequestTracker, type SlotHandle } from "./busy-tracker";
 import { getDegradedServerIds, recordSuccess, recordError, getErrorRate } from "./health-tracker";
 import { unloadModel } from "../lib/ollama";
 
@@ -53,12 +53,25 @@ const OPTIMISTIC_TTL_MS = 30000; // 30s, enough for load + poller to catch up
 
 const busyTracker = new BusyRequestTracker();
 
-export function markRequestStart(serverId: number): void {
-  busyTracker.markStart(serverId);
+export function markRequestStart(serverId: number): SlotHandle {
+  return busyTracker.markStart(serverId);
 }
 
-export function markRequestEnd(serverId: number): void {
-  busyTracker.markEnd(serverId);
+export function markRequestEnd(handle: SlotHandle): void {
+  busyTracker.markEnd(handle);
+}
+
+export function getAutoReleasedCount(): number {
+  return busyTracker.getAutoReleasedCount();
+}
+
+export function getQueueLengths(): Map<number, number> {
+  const lens = new Map<number, number>();
+  for (const s of cachedStates) {
+    const n = busyTracker.getQueueLength(s.id);
+    if (n > 0) lens.set(s.id, n);
+  }
+  return lens;
 }
 
 export function getInFlightCounts(): Map<number, number> {
