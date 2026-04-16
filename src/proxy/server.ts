@@ -498,6 +498,11 @@ async function ensureModelLoaded(
         port: parseInt(port || "11434", 10),
         path: "/api/generate",
         method: "POST",
+        // Hard cap on warmup: loose enough for big models (qwen3.5:35b
+        // takes ~30s on DGX) but tight enough that a stuck backend fails
+        // fast and releases the slot, instead of blocking until the
+        // 5-minute safety timer fires.
+        timeout: WARMUP_TIMEOUT_MS,
         headers: {
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(body).toString(),
@@ -520,12 +525,19 @@ async function ensureModelLoaded(
       console.warn(`[proxy] Warmup error for ${model} on ${serverName}: ${err.message}`);
       resolve(false);
     });
+    req.on("timeout", () => {
+      console.warn(`[proxy] Warmup timeout (${WARMUP_TIMEOUT_MS / 1000}s) for ${model} on ${serverName}`);
+      req.destroy(new Error("warmup timeout"));
+      resolve(false);
+    });
     req.write(body);
     req.end();
   });
 }
 
 // --- Main request handler ---
+
+const WARMUP_TIMEOUT_MS = 180000; // 3 min: loose for large model loads, tight enough to release slots quickly
 
 async function handleRequest(
   req: http.IncomingMessage,

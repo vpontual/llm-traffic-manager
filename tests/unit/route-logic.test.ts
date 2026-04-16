@@ -520,3 +520,96 @@ test("selectRoute filters generic backends for /api/ endpoints", () => {
   assert.ok(result);
   assert.equal(result.server.name, "nano1");
 });
+
+
+// --- Size-based filtering (oversized model protection) ---
+
+function availableModelSize(name: string, size: number) {
+  return { ...availableModel(name), size };
+}
+
+test("selectRoute filters out servers that cannot fit the model by RAM", () => {
+  // qwen3.5:35b is ~22GB on disk — Nanos (16GB) can't hold it.
+  const bigModel = "qwen3.5:35b";
+  const bigModelSize = 22 * 1024 ** 3;
+  const bigNano1 = { ...nano1, availableModels: [availableModelSize(bigModel, bigModelSize)] };
+  const bigNano2 = { ...nano2, availableModels: [availableModelSize(bigModel, bigModelSize)] };
+  const bigDgx = { ...dgx, availableModels: [availableModelSize(bigModel, bigModelSize)] };
+  const result = selectRoute({
+    onlineServers: [bigNano1, bigNano2, bigDgx],
+    modelName: bigModel,
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+  });
+  assert.ok(result);
+  assert.equal(result.server.name, "dgx", "should route only to dgx; nanos filtered out");
+});
+
+test("selectRoute keeps a server in the pool if the model is already loaded there, even if nominally oversized", () => {
+  // Edge case: a model is already in VRAM on an undersized server. Respect
+  // that — it obviously fits (is loaded), do not evict it.
+  const bigModel = "qwen3.5:35b";
+  const bigModelSize = 22 * 1024 ** 3;
+  const tinyWithLoaded = {
+    ...nano1,
+    totalRamGb: 16,
+    loadedModels: [{ ...loadedModel(bigModel), size: bigModelSize, size_vram: bigModelSize }],
+  };
+  const result = selectRoute({
+    onlineServers: [tinyWithLoaded],
+    modelName: bigModel,
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+  });
+  assert.ok(result);
+  assert.equal(result.server.name, "nano1");
+  assert.equal(result.reason, "model_loaded");
+});
+
+test("selectRoute returns null when no server has enough RAM", () => {
+  const hugeModel = "theoretical:500b";
+  const hugeSize = 300 * 1024 ** 3; // 300GB — nothing in the fleet fits
+  const dgxWithHuge = { ...dgx, availableModels: [availableModelSize(hugeModel, hugeSize)] };
+  const result = selectRoute({
+    onlineServers: [dgxWithHuge, agx, nano1, nano2],
+    modelName: hugeModel,
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+  });
+  assert.equal(result, null);
+});
+
+test("selectRoute does not filter when model size is unknown (not advertised on any server)", () => {
+  const unknownModel = "not-downloaded-anywhere:1b";
+  const result = selectRoute({
+    onlineServers: [dgx, agx, nano1, nano2],
+    modelName: unknownModel,
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+  });
+  // No size info, so no filter — falls through to fallback_most_vram.
+  assert.ok(result);
+  assert.equal(result.reason, "fallback_most_vram");
+});
+
+test("selectRoute picks the largest reported size when sizes differ across servers", () => {
+  // Defensive: if available size differs per server (shouldn't happen in
+  // practice but is technically possible), use the larger one for the fit check.
+  const modelName = "mystery:size";
+  const dgxWithSmall = { ...dgx, availableModels: [availableModelSize(modelName, 10 * 1024 ** 3)] };
+  const nano1WithBig  = { ...nano1, availableModels: [availableModelSize(modelName, 22 * 1024 ** 3)] };
+  const result = selectRoute({
+    onlineServers: [dgxWithSmall, nano1WithBig],
+    modelName,
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+  });
+  // Max size = 22GB, nano1 (16GB) filtered; dgx (128GB) stays.
+  assert.ok(result);
+  assert.equal(result.server.name, "dgx");
+});

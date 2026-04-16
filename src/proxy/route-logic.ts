@@ -86,6 +86,34 @@ export interface SelectRouteResult {
  * - Degraded servers (high error rate) are deprioritized
  * - Servers with fewer in-flight requests are preferred
  */
+/**
+ * Largest on-disk size observed for this model across servers that report
+ * having it available. Returns null if no server advertises it. We take max
+ * (not min) to be conservative: if different servers report slightly
+ * different sizes, route as if the larger one is truth.
+ */
+function deriveModelSize(onlineServers: ServerSnapshot[], modelName: string): number | null {
+  let maxSize: number | null = null;
+  for (const s of onlineServers) {
+    const available = s.availableModels.find((m) => m.name === modelName);
+    if (available && typeof available.size === "number" && available.size > 0) {
+      if (maxSize === null || available.size > maxSize) maxSize = available.size;
+    }
+    const loaded = s.loadedModels.find((m) => m.name === modelName);
+    if (loaded && typeof loaded.size === "number" && loaded.size > 0) {
+      if (maxSize === null || loaded.size > maxSize) maxSize = loaded.size;
+    }
+  }
+  return maxSize;
+}
+
+/**
+ * RAM fit threshold — a model needs at most this fraction of the server's
+ * total RAM to be considered routable. Matches the threshold used by the
+ * dashboard's oversized-model recommendations.
+ */
+const MODEL_FIT_THRESHOLD = 0.80;
+
 export function selectRoute(params: SelectRouteParams): SelectRouteResult | null {
   const {
     modelName, optimisticServerId, lastRoutedServerId,
@@ -100,6 +128,22 @@ export function selectRoute(params: SelectRouteParams): SelectRouteResult | null
   let onlineServers = params.onlineServers;
   if (endpointPath && endpointPath.startsWith("/api/")) {
     onlineServers = onlineServers.filter((s) => s.backendType === "ollama");
+  }
+
+  // Size-based filter: drop servers that physically cannot hold this model.
+  // A server stays in the pool if EITHER (a) it advertises enough RAM to fit
+  // the model under the 80% threshold, OR (b) the model is already loaded
+  // there (it has fit by definition). If we cannot derive the size (no
+  // server advertises the model yet), skip the filter — let the normal tiers
+  // fall through to the best-effort fallback.
+  const modelSize = deriveModelSize(onlineServers, modelName);
+  if (modelSize !== null) {
+    onlineServers = onlineServers.filter((s) => {
+      const ramBytes = s.totalRamGb * 1024 ** 3;
+      const fits = ramBytes * MODEL_FIT_THRESHOLD >= modelSize;
+      const alreadyLoaded = s.loadedModels.some((m) => m.name === modelName);
+      return fits || alreadyLoaded;
+    });
   }
 
   if (onlineServers.length === 0) return null;
