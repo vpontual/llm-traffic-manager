@@ -265,7 +265,7 @@ function proxyRequest(
   body: Buffer,
   allowRetry: boolean = false,
   pathOverride?: string,
-  responseTransform?: { type: "stream"; transform: import("node:stream").Transform } | { type: "buffer"; transform: (buf: Buffer) => Buffer },
+  responseTransform?: { type: "stream"; transform: import("node:stream").Transform; contentType: string } | { type: "buffer"; transform: (buf: Buffer) => Buffer; contentType?: string },
 ): Promise<ProxyResult> {
   return new Promise((resolve) => {
     const [host, port] = targetHost.split(":");
@@ -299,7 +299,10 @@ function proxyRequest(
         proxyRes.on("data", (chunk: Buffer) => chunks.push(chunk));
         proxyRes.on("end", () => {
           const responseBody = Buffer.concat(chunks).toString();
-          if (statusCode === 404 && responseBody.includes("not found")) {
+          // Ollama: "model 'X' not found"; vLLM: "model `X` does not exist".
+          const looksLikeModelMissing =
+            responseBody.includes("not found") || responseBody.includes("does not exist");
+          if (statusCode === 404 && looksLikeModelMissing) {
             resolve({ statusCode, retryable: true });
           } else if (statusCode === 500) {
             console.log(`[proxy] Backend returned 500: ${responseBody.slice(0, 200)}`);
@@ -314,22 +317,26 @@ function proxyRequest(
         return;
       }
 
-      // Normal path: stream directly, or through transform if converting
-      if (responseTransform?.type === "stream") {
+      // Normal path: stream directly, or through transform if converting.
+      // Error bodies (non-2xx) are always passed through raw — response
+      // transforms expect success-shaped payloads and would produce garbage
+      // Ollama frames from an OpenAI error JSON.
+      const is2xx = statusCode >= 200 && statusCode < 300;
+      if (responseTransform?.type === "stream" && is2xx) {
         const headers = { ...proxyRes.headers };
-        headers["content-type"] = "text/event-stream";
+        headers["content-type"] = responseTransform.contentType;
         delete headers["content-length"];
         res.writeHead(statusCode, headers);
         proxyRes.pipe(responseTransform.transform).pipe(res);
         responseTransform.transform.on("end", () => resolve({ statusCode, retryable: false }));
         responseTransform.transform.on("error", (err) => resolveProxyError(err, res, false, resolve));
-      } else if (responseTransform?.type === "buffer") {
+      } else if (responseTransform?.type === "buffer" && is2xx) {
         const chunks: Buffer[] = [];
         proxyRes.on("data", (chunk: Buffer) => chunks.push(chunk));
         proxyRes.on("end", () => {
           const transformed = responseTransform.transform(Buffer.concat(chunks));
           const headers = { ...proxyRes.headers };
-          headers["content-type"] = "application/json";
+          headers["content-type"] = responseTransform.contentType ?? "application/json";
           headers["content-length"] = Buffer.byteLength(transformed).toString();
           res.writeHead(statusCode, headers);
           res.end(transformed);
@@ -573,8 +580,8 @@ const OLLAMA_NATIVE_PATHS = new Set([
 const VLLM_TRANSLATABLE_PATHS = OLLAMA_NATIVE_PATHS;
 
 type ResponseTransform =
-  | { type: "stream"; transform: import("node:stream").Transform }
-  | { type: "buffer"; transform: (buf: Buffer) => Buffer };
+  | { type: "stream"; transform: import("node:stream").Transform; contentType: string }
+  | { type: "buffer"; transform: (buf: Buffer) => Buffer; contentType?: string };
 
 interface BackendRequest {
   effectivePath: string;
@@ -615,6 +622,7 @@ function prepareBackendRequest(
   route: { serverId: number; serverName: string; backendType: "ollama" | "vllm" | "generic" },
   clientPath: string,
   clientBody: Buffer,
+  model: string | null,
   startedAt: number,
 ): BackendRequest {
   // Generic backends never serve traffic (they're health-check only).
@@ -663,7 +671,7 @@ function prepareBackendRequest(
       const isStreaming = isOllamaStreaming(clientPath, clientBody);
       const ctx = {
         clientPath,
-        model: extractModel(clientBody) ?? "",
+        model: model ?? "",
         isStreaming,
         startedAt,
       };
@@ -671,8 +679,16 @@ function prepareBackendRequest(
         effectivePath: adapted.path,
         effectiveBody: adapted.body,
         responseTransform: isStreaming
-          ? { type: "stream", transform: createVllmToOllamaStreamTransform(ctx) }
-          : { type: "buffer", transform: (buf) => adaptResponseVllmToOllama(buf, ctx) },
+          ? {
+              type: "stream",
+              transform: createVllmToOllamaStreamTransform(ctx),
+              contentType: "application/x-ndjson",
+            }
+          : {
+              type: "buffer",
+              transform: (buf) => adaptResponseVllmToOllama(buf, ctx),
+              contentType: "application/json",
+            },
         injectedDefaults: [],
         skipWarmup: true,
       };
@@ -714,8 +730,16 @@ function prepareBackendRequest(
       effectiveBody = convertRequestToNative(conversion.parsed);
       effectivePath = "/api/chat";
       responseTransform = conversion.ctx.isStreaming
-        ? { type: "stream", transform: createV1StreamTransform(conversion.ctx.model) }
-        : { type: "buffer", transform: (buf: Buffer) => convertResponseToV1(buf, conversion.ctx.model) };
+        ? {
+            type: "stream",
+            transform: createV1StreamTransform(conversion.ctx.model),
+            contentType: "text/event-stream",
+          }
+        : {
+            type: "buffer",
+            transform: (buf: Buffer) => convertResponseToV1(buf, conversion.ctx.model),
+            contentType: "application/json",
+          };
     }
   }
 
@@ -815,7 +839,7 @@ async function handleRequest(
     }
 
     // Prepare the backend-specific request (injection, translation, transform).
-    const prep = prepareBackendRequest(route, path, body, startTime);
+    const prep = prepareBackendRequest(route, path, body, model, startTime);
     if (prep.error) {
       if (!res.headersSent) {
         res.writeHead(prep.error.statusCode, { "content-type": "application/json" });

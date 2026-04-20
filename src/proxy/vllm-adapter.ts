@@ -96,11 +96,21 @@ function adaptGenerate(parsed: Record<string, unknown>): AdaptedRequest {
   if (parsed.stream !== undefined) body.stream = parsed.stream;
   if (typeof parsed.suffix === "string") body.suffix = parsed.suffix;
   mapOptionsToVllm(parsed.options as Record<string, unknown> | undefined, body);
-  // Force usage stats in the final streaming chunk so we can populate eval_count.
-  if (parsed.stream !== false) {
-    body.stream_options = { include_usage: true };
-  }
+  if (parsed.stream !== false) mergeStreamOptions(parsed, body);
   return { path: "/v1/completions", body: Buffer.from(JSON.stringify(body)) };
+}
+
+/**
+ * Merge `{include_usage: true}` into the target body's stream_options without
+ * clobbering any client-provided keys. Ollama clients don't normally send this
+ * field but an OpenAI-shaped client could hit /api/chat via the adapter.
+ */
+function mergeStreamOptions(parsed: Record<string, unknown>, target: Record<string, unknown>): void {
+  const existing =
+    typeof parsed.stream_options === "object" && parsed.stream_options !== null
+      ? (parsed.stream_options as Record<string, unknown>)
+      : {};
+  target.stream_options = { ...existing, include_usage: true };
 }
 
 function adaptChat(parsed: Record<string, unknown>): AdaptedRequest {
@@ -112,9 +122,7 @@ function adaptChat(parsed: Record<string, unknown>): AdaptedRequest {
   if (Array.isArray(parsed.tools)) body.tools = parsed.tools;
   if (parsed.tool_choice !== undefined) body.tool_choice = parsed.tool_choice;
   mapOptionsToVllm(parsed.options as Record<string, unknown> | undefined, body);
-  if (parsed.stream !== false) {
-    body.stream_options = { include_usage: true };
-  }
+  if (parsed.stream !== false) mergeStreamOptions(parsed, body);
   return { path: "/v1/chat/completions", body: Buffer.from(JSON.stringify(body)) };
 }
 

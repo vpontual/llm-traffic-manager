@@ -84,6 +84,23 @@ test("adapter: /api/generate streaming adds stream_options.include_usage", () =>
   assert.deepEqual(body.stream_options, { include_usage: true });
 });
 
+test("adapter: existing stream_options keys are preserved when include_usage is forced on", () => {
+  const result = adaptRequestOllamaToVllm(
+    "/api/chat",
+    buf({
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+      stream: true,
+      stream_options: { foo: "bar", include_usage: false },
+    }),
+  );
+  assert.ok(result);
+  const body = parseJsonBuf(result.body);
+  assert.equal(body.stream_options.foo, "bar");
+  // include_usage is always forced on so the final chunk has usage.
+  assert.equal(body.stream_options.include_usage, true);
+});
+
 test("adapter: /api/generate defaults stream to true (no stream field)", () => {
   const result = adaptRequestOllamaToVllm("/api/generate", buf({ model: "m", prompt: "hi" }));
   assert.ok(result);

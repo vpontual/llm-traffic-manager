@@ -314,18 +314,24 @@ export function getRecommendedPullServer(): PullRecommendation | null {
 }
 
 /**
- * Pick any online server (for model-less endpoints like /api/tags)
+ * Pick any online server for model-less endpoints. Excludes `generic` backends
+ * (health-check-only) and prefers Ollama over vLLM — generic-native paths like
+ * /api/version are Ollama-specific and will 4xx on a vLLM backend.
  */
 export async function pickAnyServer(): Promise<RouteDecision | null> {
   const states = await refreshServerStates();
-  const online = states.filter((s) => s.isOnline && !s.isDisabled);
+  const online = states.filter(
+    (s) => s.isOnline && !s.isDisabled && s.backendType !== "generic",
+  );
   if (online.length === 0) return null;
+  const preferred =
+    online.find((s) => s.backendType === "ollama") ?? online[0];
   return {
-    host: online[0].host,
-    serverId: online[0].id,
-    serverName: online[0].name,
+    host: preferred.host,
+    serverId: preferred.id,
+    serverName: preferred.name,
     reason: "any_online",
-    backendType: online[0].backendType,
+    backendType: preferred.backendType,
   };
 }
 
