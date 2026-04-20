@@ -760,7 +760,7 @@ async function handleRequest(
       responseBody.hint = `To download this model, POST /api/pull with {"model": "${model}"}`;
 
       const lastNotified = modelNotFoundNotified.get(model) ?? 0;
-      if (Date.now() - lastNotified > NOTIFY_DEBOUNCE_MS) {
+      if (process.env.MUTE_MODEL_NOT_FOUND_ALERTS !== "true" && Date.now() - lastNotified > NOTIFY_DEBOUNCE_MS) {
         modelNotFoundNotified.set(model, Date.now());
         const loaded = recommendation.loadedModels.length > 0
           ? recommendation.loadedModels.join(", ")

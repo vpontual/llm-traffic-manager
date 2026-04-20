@@ -15,6 +15,7 @@ services:
       - SOURCE_NAMES=${SOURCE_NAMES:-{}}
       - OFFLINE_THRESHOLD=${OFFLINE_THRESHOLD:-3}
       - HEALTH_CHECK_TIMEOUT=${HEALTH_CHECK_TIMEOUT:-5000}
+      - MUTE_MODEL_NOT_FOUND_ALERTS=${MUTE_MODEL_NOT_FOUND_ALERTS:-false}
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=1
     healthcheck:
