@@ -13,9 +13,11 @@ export function formatUptime(seconds: number): string {
 }
 
 /**
- * Format a byte count to a human-readable string (e.g. "4.2 GB", "512 MB")
+ * Format a byte count to a human-readable string (e.g. "4.2 GB", "512 MB").
+ * Returns "—" for null (e.g. vLLM-backed entries that don't report size).
  */
-export function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null) return "—";
   if (bytes === 0) return "0 B";
   const gb = bytes / (1024 * 1024 * 1024);
   if (gb >= 1) return `${gb.toFixed(1)} GB`;

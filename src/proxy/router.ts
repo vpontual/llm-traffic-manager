@@ -151,6 +151,7 @@ export interface RouteDecision {
   serverId: number;
   serverName: string;
   reason: string;
+  backendType: "ollama" | "vllm" | "generic";
 }
 
 /**
@@ -261,6 +262,7 @@ export async function routeModel(
     serverId: result.server.id,
     serverName: result.server.name,
     reason: result.reason,
+    backendType: result.server.backendType,
   };
 }
 
@@ -323,6 +325,7 @@ export async function pickAnyServer(): Promise<RouteDecision | null> {
     serverId: online[0].id,
     serverName: online[0].name,
     reason: "any_online",
+    backendType: online[0].backendType,
   };
 }
 
@@ -353,5 +356,6 @@ export async function resolveServerByName(
     serverId: server.id,
     serverName: server.name,
     reason: "pinned_by_header",
+    backendType: server.backendType,
   };
 }

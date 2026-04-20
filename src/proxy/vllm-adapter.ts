@@ -1,0 +1,444 @@
+// Ollama <-> vLLM (OpenAI /v1) request and response translation.
+//
+// Runs AFTER routing selects a vLLM backend. Lets upstream services keep using
+// Ollama-native endpoints (/api/generate, /api/chat, /api/embed) while the
+// chosen backend speaks OpenAI /v1/* under the hood.
+//
+// Non-streaming: request is rewritten, response is buffered and translated back.
+// Streaming: response is an SSE stream from vLLM; a Transform adapter emits
+// Ollama-shaped NDJSON frames.
+
+import { Transform, type TransformCallback } from "node:stream";
+
+// --- Context passed from server.ts into the adapters ---
+
+export interface VllmAdaptContext {
+  /** Path the client originally called, e.g. "/api/chat". */
+  clientPath: string;
+  /** Model name requested by the client (same identifier vLLM advertises). */
+  model: string;
+  /** Whether this request expects a streamed response. */
+  isStreaming: boolean;
+  /** Wall-clock start (ms since epoch) for synthesizing total_duration. */
+  startedAt: number;
+}
+
+// --- Request translation (Ollama-native -> OpenAI /v1) ---
+
+export interface AdaptedRequest {
+  path: string;
+  body: Buffer;
+}
+
+/**
+ * Map Ollama `options.*` keys to equivalent OpenAI /v1 params.
+ * Unknown keys are silently dropped (vLLM rejects unknown fields).
+ * Ollama-only keys (num_ctx, num_gpu, num_thread, keep_alive, mirostat*) are
+ * dropped intentionally — vLLM owns serving configuration.
+ */
+function mapOptionsToVllm(
+  options: Record<string, unknown> | undefined,
+  target: Record<string, unknown>,
+): void {
+  if (!options || typeof options !== "object") return;
+  if (typeof options.temperature === "number") target.temperature = options.temperature;
+  if (typeof options.top_p === "number") target.top_p = options.top_p;
+  if (typeof options.top_k === "number") target.top_k = options.top_k;
+  if (typeof options.min_p === "number") target.min_p = options.min_p;
+  if (typeof options.num_predict === "number") target.max_tokens = options.num_predict;
+  if (typeof options.seed === "number") target.seed = options.seed;
+  if (options.stop !== undefined) target.stop = options.stop;
+  if (typeof options.repeat_penalty === "number") {
+    // vLLM exposes this as repetition_penalty (extra OpenAI body field).
+    target.repetition_penalty = options.repeat_penalty;
+  }
+  if (typeof options.frequency_penalty === "number") {
+    target.frequency_penalty = options.frequency_penalty;
+  }
+  if (typeof options.presence_penalty === "number") {
+    target.presence_penalty = options.presence_penalty;
+  }
+}
+
+/** Convert Ollama historical messages to OpenAI shape (tool_call args stringified). */
+function messagesOllamaToVllm(messages: unknown[]): unknown[] {
+  return messages.map((m) => {
+    if (!m || typeof m !== "object") return m;
+    const src = m as Record<string, unknown>;
+    const out: Record<string, unknown> = { role: src.role };
+    if (src.content !== undefined) out.content = src.content;
+    if (Array.isArray(src.tool_calls)) {
+      out.tool_calls = src.tool_calls.map((tcRaw, i: number) => {
+        const tc = (tcRaw ?? {}) as Record<string, unknown>;
+        const fn = (tc.function ?? {}) as Record<string, unknown>;
+        const args =
+          typeof fn.arguments === "string"
+            ? (fn.arguments as string)
+            : JSON.stringify(fn.arguments ?? {});
+        return {
+          id: (tc.id as string | undefined) ?? `call_${i}`,
+          type: "function",
+          function: { name: fn.name, arguments: args },
+        };
+      });
+    }
+    if (src.tool_call_id !== undefined) out.tool_call_id = src.tool_call_id;
+    if (src.role === "tool" && src.name !== undefined) out.name = src.name;
+    return out;
+  });
+}
+
+function adaptGenerate(parsed: Record<string, unknown>): AdaptedRequest {
+  const body: Record<string, unknown> = {
+    model: parsed.model,
+    prompt: (parsed.prompt as string | undefined) ?? "",
+  };
+  if (parsed.stream !== undefined) body.stream = parsed.stream;
+  if (typeof parsed.suffix === "string") body.suffix = parsed.suffix;
+  mapOptionsToVllm(parsed.options as Record<string, unknown> | undefined, body);
+  // Force usage stats in the final streaming chunk so we can populate eval_count.
+  if (parsed.stream !== false) {
+    body.stream_options = { include_usage: true };
+  }
+  return { path: "/v1/completions", body: Buffer.from(JSON.stringify(body)) };
+}
+
+function adaptChat(parsed: Record<string, unknown>): AdaptedRequest {
+  const body: Record<string, unknown> = {
+    model: parsed.model,
+    messages: messagesOllamaToVllm(Array.isArray(parsed.messages) ? parsed.messages : []),
+  };
+  if (parsed.stream !== undefined) body.stream = parsed.stream;
+  if (Array.isArray(parsed.tools)) body.tools = parsed.tools;
+  if (parsed.tool_choice !== undefined) body.tool_choice = parsed.tool_choice;
+  mapOptionsToVllm(parsed.options as Record<string, unknown> | undefined, body);
+  if (parsed.stream !== false) {
+    body.stream_options = { include_usage: true };
+  }
+  return { path: "/v1/chat/completions", body: Buffer.from(JSON.stringify(body)) };
+}
+
+function adaptEmbed(parsed: Record<string, unknown>): AdaptedRequest {
+  // /api/embed uses `input`; legacy /api/embeddings uses `prompt`. vLLM wants `input`.
+  const input =
+    parsed.input !== undefined ? parsed.input : (parsed.prompt as string | undefined) ?? "";
+  const body: Record<string, unknown> = { model: parsed.model, input };
+  return { path: "/v1/embeddings", body: Buffer.from(JSON.stringify(body)) };
+}
+
+/**
+ * Translate an Ollama-native request into an OpenAI /v1 request for vLLM.
+ * Returns null if the path is not translatable (caller should 400).
+ */
+export function adaptRequestOllamaToVllm(path: string, body: Buffer): AdaptedRequest | null {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(body.toString() || "{}") as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (path === "/api/generate") return adaptGenerate(parsed);
+  if (path === "/api/chat") return adaptChat(parsed);
+  if (path === "/api/embed" || path === "/api/embeddings") return adaptEmbed(parsed);
+  return null;
+}
+
+// --- Response translation (OpenAI /v1 -> Ollama-native) ---
+
+function parseToolCallArgs(raw: unknown): unknown {
+  if (typeof raw !== "string") return raw ?? {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function openAiToolCallsToOllama(toolCalls: unknown): unknown[] | undefined {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return undefined;
+  return toolCalls.map((tcRaw) => {
+    const tc = (tcRaw ?? {}) as Record<string, unknown>;
+    const fn = (tc.function ?? {}) as Record<string, unknown>;
+    return {
+      function: {
+        name: fn.name,
+        arguments: parseToolCallArgs(fn.arguments),
+      },
+    };
+  });
+}
+
+/**
+ * Translate a non-streaming vLLM response back into the Ollama-native shape
+ * that matches the client's original endpoint.
+ */
+export function adaptResponseVllmToOllama(buf: Buffer, ctx: VllmAdaptContext): Buffer {
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(buf.toString()) as Record<string, unknown>;
+  } catch {
+    return buf;
+  }
+
+  const totalDurationNs = Math.max(0, (Date.now() - ctx.startedAt) * 1_000_000);
+  const model = (data.model as string | undefined) ?? ctx.model;
+  const usage = (data.usage ?? {}) as Record<string, unknown>;
+  const promptTokens = typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : 0;
+  const completionTokens =
+    typeof usage.completion_tokens === "number" ? usage.completion_tokens : 0;
+  const choices = Array.isArray(data.choices) ? (data.choices as Record<string, unknown>[]) : [];
+  const choice = choices[0] ?? {};
+  const finishReason = (choice.finish_reason as string | undefined) ?? "stop";
+
+  if (ctx.clientPath === "/api/generate") {
+    const text = (choice.text as string | undefined) ?? "";
+    const out = {
+      model,
+      created_at: new Date().toISOString(),
+      response: text,
+      done: true,
+      done_reason: finishReason,
+      context: [] as number[],
+      total_duration: totalDurationNs,
+      load_duration: 0,
+      prompt_eval_count: promptTokens,
+      prompt_eval_duration: 0,
+      eval_count: completionTokens,
+      eval_duration: totalDurationNs,
+    };
+    return Buffer.from(JSON.stringify(out));
+  }
+
+  if (ctx.clientPath === "/api/chat") {
+    const message = (choice.message ?? {}) as Record<string, unknown>;
+    const toolCalls = openAiToolCallsToOllama(message.tool_calls);
+    const ollamaMessage: Record<string, unknown> = {
+      role: (message.role as string | undefined) ?? "assistant",
+      content: (message.content as string | undefined) ?? "",
+    };
+    if (toolCalls) ollamaMessage.tool_calls = toolCalls;
+    const out = {
+      model,
+      created_at: new Date().toISOString(),
+      message: ollamaMessage,
+      done: true,
+      done_reason: toolCalls ? "tool_calls" : finishReason,
+      total_duration: totalDurationNs,
+      load_duration: 0,
+      prompt_eval_count: promptTokens,
+      prompt_eval_duration: 0,
+      eval_count: completionTokens,
+      eval_duration: totalDurationNs,
+    };
+    return Buffer.from(JSON.stringify(out));
+  }
+
+  if (ctx.clientPath === "/api/embed" || ctx.clientPath === "/api/embeddings") {
+    const dataArr = Array.isArray(data.data) ? (data.data as Record<string, unknown>[]) : [];
+    const embeddings = dataArr.map((e) => e.embedding as number[]);
+    if (ctx.clientPath === "/api/embed") {
+      return Buffer.from(
+        JSON.stringify({
+          model,
+          embeddings,
+          total_duration: totalDurationNs,
+          load_duration: 0,
+          prompt_eval_count: promptTokens,
+        }),
+      );
+    }
+    // Legacy /api/embeddings is single-vector shape.
+    return Buffer.from(JSON.stringify({ embedding: embeddings[0] ?? [] }));
+  }
+
+  return buf;
+}
+
+// --- Streaming transform (vLLM SSE -> Ollama NDJSON) ---
+
+/**
+ * Parse SSE data lines out of a raw chunk buffer. Returns the list of parsed
+ * events and the residual (incomplete) suffix to carry forward.
+ *
+ * SSE framing: events separated by blank lines (\n\n or \r\n\r\n). Each event
+ * contains one or more `data:` lines; for OpenAI streams there is exactly one
+ * data line per event, optionally `[DONE]` as the sentinel.
+ */
+function drainSseEvents(buffer: string): { events: string[]; residual: string } {
+  const events: string[] = [];
+  const splitter = /\r?\n\r?\n/;
+  const parts = buffer.split(splitter);
+  const residual = parts.pop() ?? "";
+  for (const part of parts) {
+    const lines = part.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      events.push(trimmed.slice(5).trim());
+    }
+  }
+  return { events, residual };
+}
+
+/**
+ * Create a Transform that converts a vLLM SSE response stream into
+ * Ollama-native NDJSON. One NDJSON frame per output delta, plus a final
+ * `done: true` frame that carries usage and finish_reason.
+ *
+ * Tool calls arrive as incremental argument fragments over many deltas. We
+ * accumulate them and emit the assembled tool_calls once on the done frame
+ * (matching Ollama's own streaming behavior of emitting tool calls whole).
+ */
+export function createVllmToOllamaStreamTransform(ctx: VllmAdaptContext): Transform {
+  let buffer = "";
+  let doneEmitted = false;
+  let roleEmitted = false;
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let finishReason: string | null = null;
+  const accumulatedToolCalls = new Map<number, { id?: string; name?: string; args: string }>();
+
+  const emitDone = (push: (frame: string) => void) => {
+    if (doneEmitted) return;
+    doneEmitted = true;
+    const totalDurationNs = Math.max(0, (Date.now() - ctx.startedAt) * 1_000_000);
+    const toolCalls =
+      accumulatedToolCalls.size > 0
+        ? [...accumulatedToolCalls.values()].map((t) => ({
+            function: {
+              name: t.name ?? "",
+              arguments: (() => {
+                try {
+                  return JSON.parse(t.args || "{}");
+                } catch {
+                  return {};
+                }
+              })(),
+            },
+          }))
+        : null;
+
+    if (ctx.clientPath === "/api/generate") {
+      const frame = {
+        model: ctx.model,
+        created_at: new Date().toISOString(),
+        response: "",
+        done: true,
+        done_reason: finishReason ?? "stop",
+        context: [] as number[],
+        total_duration: totalDurationNs,
+        load_duration: 0,
+        prompt_eval_count: promptTokens,
+        prompt_eval_duration: 0,
+        eval_count: completionTokens,
+        eval_duration: totalDurationNs,
+      };
+      push(JSON.stringify(frame) + "\n");
+      return;
+    }
+
+    const message: Record<string, unknown> = { role: "assistant", content: "" };
+    if (toolCalls) message.tool_calls = toolCalls;
+    const frame = {
+      model: ctx.model,
+      created_at: new Date().toISOString(),
+      message,
+      done: true,
+      done_reason: toolCalls ? "tool_calls" : (finishReason ?? "stop"),
+      total_duration: totalDurationNs,
+      load_duration: 0,
+      prompt_eval_count: promptTokens,
+      prompt_eval_duration: 0,
+      eval_count: completionTokens,
+      eval_duration: totalDurationNs,
+    };
+    push(JSON.stringify(frame) + "\n");
+  };
+
+  return new Transform({
+    transform(chunk: Buffer, _enc: string, callback: TransformCallback) {
+      buffer += chunk.toString();
+      const { events, residual } = drainSseEvents(buffer);
+      buffer = residual;
+
+      for (const payload of events) {
+        if (!payload) continue;
+        if (payload === "[DONE]") {
+          emitDone((b) => this.push(b));
+          continue;
+        }
+
+        let ev: Record<string, unknown>;
+        try {
+          ev = JSON.parse(payload) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+
+        const usage = ev.usage as Record<string, unknown> | undefined;
+        if (usage) {
+          if (typeof usage.prompt_tokens === "number") promptTokens = usage.prompt_tokens;
+          if (typeof usage.completion_tokens === "number") {
+            completionTokens = usage.completion_tokens;
+          }
+        }
+
+        const choices = Array.isArray(ev.choices) ? (ev.choices as Record<string, unknown>[]) : [];
+        const choice = choices[0];
+        if (!choice) continue;
+        if (typeof choice.finish_reason === "string") finishReason = choice.finish_reason;
+
+        if (ctx.clientPath === "/api/generate") {
+          const text = (choice.text as string | undefined) ?? "";
+          if (text) {
+            const frame = {
+              model: ctx.model,
+              created_at: new Date().toISOString(),
+              response: text,
+              done: false,
+            };
+            this.push(JSON.stringify(frame) + "\n");
+          }
+          continue;
+        }
+
+        // /api/chat streaming: OpenAI uses delta.content and delta.tool_calls.
+        const delta = (choice.delta ?? {}) as Record<string, unknown>;
+        if (Array.isArray(delta.tool_calls)) {
+          for (const tcRaw of delta.tool_calls) {
+            const tc = (tcRaw ?? {}) as Record<string, unknown>;
+            const idx = typeof tc.index === "number" ? tc.index : 0;
+            const entry = accumulatedToolCalls.get(idx) ?? { args: "" };
+            if (typeof tc.id === "string") entry.id = tc.id;
+            const fn = (tc.function ?? {}) as Record<string, unknown>;
+            if (typeof fn.name === "string" && fn.name) entry.name = fn.name;
+            if (typeof fn.arguments === "string") entry.args += fn.arguments;
+            accumulatedToolCalls.set(idx, entry);
+          }
+          continue;
+        }
+
+        const content = (delta.content as string | undefined) ?? "";
+        if (content || (!roleEmitted && typeof delta.role === "string")) {
+          const role = (delta.role as string | undefined) ?? "assistant";
+          const frame = {
+            model: ctx.model,
+            created_at: new Date().toISOString(),
+            message: { role, content },
+            done: false,
+          };
+          this.push(JSON.stringify(frame) + "\n");
+          roleEmitted = true;
+        }
+      }
+      callback();
+    },
+
+    flush(callback: TransformCallback) {
+      // If the upstream closed without sending [DONE], still emit a done frame
+      // so the client gets a well-formed NDJSON stream.
+      emitDone((b) => this.push(b));
+      callback();
+    },
+  });
+}

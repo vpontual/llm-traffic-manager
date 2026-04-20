@@ -27,7 +27,8 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { readJsonEnv } from "../lib/env";
 import { extractModel, injectProxyDefaults } from "./parse";
 import { sendTelegramMessage } from "../lib/telegram";
-import { detectNativeConversion, convertRequestToNative, convertResponseToV1, createV1StreamTransform, type ConversionContext } from "./v1-compat";
+import { detectNativeConversion, convertRequestToNative, convertResponseToV1, createV1StreamTransform } from "./v1-compat";
+import { adaptRequestOllamaToVllm, adaptResponseVllmToOllama, createVllmToOllamaStreamTransform } from "./vllm-adapter";
 
 const PROXY_PORT = 11434;
 
@@ -365,28 +366,38 @@ function proxyRequest(
 
 /**
  * Aggregate /api/tags from all servers (deduplicated by model name).
+ *
+ * Ollama servers: live /api/tags fetch (freshest model catalog).
+ * vLLM servers: use the poller's cached snapshot (synthesized from /v1/models
+ * with null size metadata — vLLM doesn't expose on-disk sizes).
  */
 async function handleAggregateTags(
   req: http.IncomingMessage,
   res: http.ServerResponse
 ): Promise<void> {
   const onlineServers = await getAllOnlineServers();
-  const ollamaServers = onlineServers.filter((s) => s.backendType === "ollama");
   const allModels = new Map<string, unknown>();
 
   await Promise.all(
-    ollamaServers.map(async (server) => {
-      try {
-        const resp = await fetch(`http://${server.host}/api/tags`, { signal: AbortSignal.timeout(10000) });
-        const data = await resp.json();
-        for (const model of data.models ?? []) {
-          if (!allModels.has(model.name)) {
-            allModels.set(model.name, model);
+    onlineServers.map(async (server) => {
+      if (server.backendType === "ollama") {
+        try {
+          const resp = await fetch(`http://${server.host}/api/tags`, { signal: AbortSignal.timeout(10000) });
+          const data = await resp.json();
+          for (const model of data.models ?? []) {
+            if (!allModels.has(model.name)) allModels.set(model.name, model);
           }
+        } catch {
+          // Server unreachable, skip
         }
-      } catch {
-        // Server unreachable, skip
+        return;
       }
+      if (server.backendType === "vllm") {
+        for (const model of server.availableModels) {
+          if (!allModels.has(model.name)) allModels.set(model.name, model);
+        }
+      }
+      // generic: no model catalog
     })
   );
 
@@ -401,25 +412,35 @@ async function handleAggregateTags(
 
 /**
  * Aggregate /api/ps from all servers.
+ *
+ * vLLM servers always expose their served model as "loaded" (no lazy loading),
+ * so we synthesize a running-model entry from the poller snapshot.
  */
 async function handleAggregatePs(
   req: http.IncomingMessage,
   res: http.ServerResponse
 ): Promise<void> {
   const onlineServers = await getAllOnlineServers();
-  const ollamaServers = onlineServers.filter((s) => s.backendType === "ollama");
   const allModels: unknown[] = [];
 
   await Promise.all(
-    ollamaServers.map(async (server) => {
-      try {
-        const resp = await fetch(`http://${server.host}/api/ps`, { signal: AbortSignal.timeout(10000) });
-        const data = await resp.json();
-        for (const model of data.models ?? []) {
+    onlineServers.map(async (server) => {
+      if (server.backendType === "ollama") {
+        try {
+          const resp = await fetch(`http://${server.host}/api/ps`, { signal: AbortSignal.timeout(10000) });
+          const data = await resp.json();
+          for (const model of data.models ?? []) {
+            allModels.push({ ...model, _server: server.name, _host: server.host });
+          }
+        } catch {
+          // Server unreachable, skip
+        }
+        return;
+      }
+      if (server.backendType === "vllm") {
+        for (const model of server.loadedModels) {
           allModels.push({ ...model, _server: server.name, _host: server.host });
         }
-      } catch {
-        // Server unreachable, skip
       }
     })
   );
@@ -539,6 +560,174 @@ async function ensureModelLoaded(
 
 const WARMUP_TIMEOUT_MS = 180000; // 3 min: loose for large model loads, tight enough to release slots quickly
 
+// Paths that originate from Ollama-native clients and need translation when
+// the chosen backend is vLLM.
+const OLLAMA_NATIVE_PATHS = new Set([
+  "/api/generate",
+  "/api/chat",
+  "/api/embed",
+  "/api/embeddings",
+]);
+
+// Endpoints the vLLM adapter can translate into /v1/*.
+const VLLM_TRANSLATABLE_PATHS = OLLAMA_NATIVE_PATHS;
+
+type ResponseTransform =
+  | { type: "stream"; transform: import("node:stream").Transform }
+  | { type: "buffer"; transform: (buf: Buffer) => Buffer };
+
+interface BackendRequest {
+  effectivePath: string;
+  effectiveBody: Buffer;
+  responseTransform?: ResponseTransform;
+  injectedDefaults: string[];
+  /** True when the backend holds the model permanently (no load trigger needed). */
+  skipWarmup: boolean;
+  /** If set, short-circuit the whole loop with this error response. */
+  error?: { statusCode: number; message: string };
+}
+
+/** Track servers for which we've already logged the keep_alive drop once. */
+const vllmKeepAliveNoticeLogged = new Set<number>();
+
+/**
+ * Detect whether an Ollama-native request expects a streamed response.
+ * `/api/generate` and `/api/chat` default to stream=true in Ollama.
+ * Embedding endpoints never stream.
+ */
+function isOllamaStreaming(path: string, body: Buffer): boolean {
+  if (path === "/api/embed" || path === "/api/embeddings") return false;
+  if (body.length === 0) return true;
+  try {
+    const parsed = JSON.parse(body.toString()) as { stream?: boolean };
+    return parsed.stream !== false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Build the backend-specific request: effective path, effective body, response
+ * translator, and dispatch flags (warmup, injected-defaults log tags). Called
+ * once per route attempt after the route decision is made.
+ */
+function prepareBackendRequest(
+  route: { serverId: number; serverName: string; backendType: "ollama" | "vllm" | "generic" },
+  clientPath: string,
+  clientBody: Buffer,
+  startedAt: number,
+): BackendRequest {
+  // Generic backends never serve traffic (they're health-check only).
+  if (route.backendType === "generic") {
+    return {
+      effectivePath: clientPath,
+      effectiveBody: clientBody,
+      injectedDefaults: [],
+      skipWarmup: true,
+      error: { statusCode: 503, message: `server ${route.serverName} is generic-only and cannot serve requests` },
+    };
+  }
+
+  if (route.backendType === "vllm") {
+    // vLLM skips Ollama-only defaults (keep_alive is meaningless; num_ctx is
+    // fixed at launch). Log once per server so the drop is visible in history.
+    if (!vllmKeepAliveNoticeLogged.has(route.serverId)) {
+      vllmKeepAliveNoticeLogged.add(route.serverId);
+      console.log(
+        `[proxy] vLLM backend ${route.serverName}: dropping Ollama-only fields (keep_alive, num_ctx) from requests routed here`,
+      );
+    }
+
+    // /v1/* paths are native to vLLM: passthrough.
+    if (clientPath.startsWith("/v1/")) {
+      return {
+        effectivePath: clientPath,
+        effectiveBody: clientBody,
+        injectedDefaults: [],
+        skipWarmup: true,
+      };
+    }
+
+    // /api/* paths: translate to /v1/*.
+    if (VLLM_TRANSLATABLE_PATHS.has(clientPath)) {
+      const adapted = adaptRequestOllamaToVllm(clientPath, clientBody);
+      if (!adapted) {
+        return {
+          effectivePath: clientPath,
+          effectiveBody: clientBody,
+          injectedDefaults: [],
+          skipWarmup: true,
+          error: { statusCode: 400, message: "invalid JSON body for backend translation" },
+        };
+      }
+      const isStreaming = isOllamaStreaming(clientPath, clientBody);
+      const ctx = {
+        clientPath,
+        model: extractModel(clientBody) ?? "",
+        isStreaming,
+        startedAt,
+      };
+      return {
+        effectivePath: adapted.path,
+        effectiveBody: adapted.body,
+        responseTransform: isStreaming
+          ? { type: "stream", transform: createVllmToOllamaStreamTransform(ctx) }
+          : { type: "buffer", transform: (buf) => adaptResponseVllmToOllama(buf, ctx) },
+        injectedDefaults: [],
+        skipWarmup: true,
+      };
+    }
+
+    // Unsupported path on vLLM (e.g. /api/pull). Router should have filtered
+    // these out; treat a leaked one as a 400 with an explicit message.
+    return {
+      effectivePath: clientPath,
+      effectiveBody: clientBody,
+      injectedDefaults: [],
+      skipWarmup: true,
+      error: {
+        statusCode: 400,
+        message: `endpoint ${clientPath} is not supported on vLLM backend ${route.serverName}`,
+      },
+    };
+  }
+
+  // --- Ollama backend path ---
+  let effectiveBody = clientBody;
+  let effectivePath = clientPath;
+  let injectedDefaults: string[] = [];
+  let responseTransform: ResponseTransform | undefined;
+
+  // Inject proxy defaults (keep_alive, num_ctx) for Ollama generation/embedding.
+  if (INJECTION_ENDPOINTS.has(clientPath) && effectiveBody.length > 0) {
+    const result = injectProxyDefaults(effectiveBody);
+    effectiveBody = result.body;
+    injectedDefaults = result.injected;
+  }
+
+  // /v1/chat/completions → /api/chat conversion so Ollama-specific fields
+  // (think, num_ctx, etc.) survive and thinking-model responses are parsed.
+  // Response is converted back to OpenAI shape.
+  if (clientPath === "/v1/chat/completions" && effectiveBody.length > 0) {
+    const conversion = detectNativeConversion(effectiveBody);
+    if (conversion) {
+      effectiveBody = convertRequestToNative(conversion.parsed);
+      effectivePath = "/api/chat";
+      responseTransform = conversion.ctx.isStreaming
+        ? { type: "stream", transform: createV1StreamTransform(conversion.ctx.model) }
+        : { type: "buffer", transform: (buf: Buffer) => convertResponseToV1(buf, conversion.ctx.model) };
+    }
+  }
+
+  return {
+    effectivePath,
+    effectiveBody,
+    responseTransform,
+    injectedDefaults,
+    skipWarmup: false,
+  };
+}
+
 async function handleRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse
@@ -577,34 +766,11 @@ async function handleRequest(
   }
 
   // Read request body for POST/PUT/PATCH/DELETE
-  let body: Buffer = Buffer.alloc(0);
-  if (method !== "GET" && method !== "HEAD") {
-    body = await readBody(req);
-  }
+  const body: Buffer =
+    method !== "GET" && method !== "HEAD" ? await readBody(req) : Buffer.alloc(0);
 
-  // Inject proxy defaults (keep_alive, num_ctx) on generation/embedding endpoints
-  let injectedDefaults: string[] = [];
-  if (INJECTION_ENDPOINTS.has(path) && body.length > 0) {
-    const result = injectProxyDefaults(body);
-    body = result.body;
-    injectedDefaults = result.injected;
-  }
-
-  // Convert /v1/chat/completions with Ollama-specific fields (think, options)
-  // to native /api/chat so the backend honors them. Response is converted back.
-  let effectivePath = path;
-  let nativeConversion: ConversionContext | null = null;
-
-  if (path === "/v1/chat/completions" && body.length > 0) {
-    const conversion = detectNativeConversion(body);
-    if (conversion) {
-      body = convertRequestToNative(conversion.parsed);
-      effectivePath = "/api/chat";
-      nativeConversion = conversion.ctx;
-    }
-  }
-
-  // Extract model from request body
+  // Extract model from request body. Done before any backend-specific
+  // translation so routing and logging see the client's intent directly.
   const model = MODEL_ENDPOINTS.has(path) ? extractModel(body) : null;
 
   // Write-protection: require valid API key for destructive operations
@@ -648,13 +814,25 @@ async function handleRequest(
       return;
     }
 
-    // Log routing decision with injected defaults and health info
+    // Prepare the backend-specific request (injection, translation, transform).
+    const prep = prepareBackendRequest(route, path, body, startTime);
+    if (prep.error) {
+      if (!res.headersSent) {
+        res.writeHead(prep.error.statusCode, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: prep.error.message }));
+      }
+      logRequest(source, userId, model, path, method, route.serverId, route.host, prep.error.statusCode, Date.now() - startTime, route.reason);
+      return;
+    }
+
+    // Log routing decision with injected defaults, backend, and health info
     const errorRate = getErrorRate(route.serverId);
     const healthTag = errorRate > 0 ? ` | health=${Math.round((1 - errorRate) * 100)}%` : "";
-    const injectTag = injectedDefaults.length > 0 ? ` | injected=[${injectedDefaults.join(",")}]` : "";
+    const injectTag = prep.injectedDefaults.length > 0 ? ` | injected=[${prep.injectedDefaults.join(",")}]` : "";
+    const backendTag = route.backendType !== "ollama" ? ` | backend=${route.backendType}` : "";
 
     console.log(
-      `[proxy] ${source} → ${route.serverName} (${route.host}) | ${method} ${path}${model ? ` | model=${model}` : ""} | reason=${route.reason}${healthTag}${injectTag}${attempt > 0 ? ` | retry=${attempt}` : ""}`
+      `[proxy] ${source} → ${route.serverName} (${route.host})${backendTag} | ${method} ${path}${model ? ` | model=${model}` : ""} | reason=${route.reason}${healthTag}${injectTag}${attempt > 0 ? ` | retry=${attempt}` : ""}`
     );
 
     const allowRetry = canRetry && attempt < MAX_ROUTE_RETRIES;
@@ -681,8 +859,8 @@ async function handleRequest(
     }
     const slotHandle: SlotHandle | null = trackBusy ? markRequestStart(route.serverId) : null;
 
-    // Transparent warmup: if model needs to be loaded, trigger the load
-    if (trackBusy && model && !route.reason.startsWith("model_loaded")) {
+    // Transparent warmup: Ollama-only. vLLM holds its model permanently.
+    if (trackBusy && model && !route.reason.startsWith("model_loaded") && !prep.skipWarmup) {
       const warmedUp = await ensureModelLoaded(route.host, model, route.serverName, source);
       if (!warmedUp && allowRetry) {
         if (slotHandle) markRequestEnd(slotHandle);
@@ -696,14 +874,11 @@ async function handleRequest(
 
     let result: ProxyResult;
     try {
+      const pathOverride = prep.effectivePath !== path ? prep.effectivePath : undefined;
       result = await proxyRequest(
-        route.host, req, res, body, allowRetry,
-        nativeConversion ? effectivePath : undefined,
-        nativeConversion
-          ? nativeConversion.isStreaming
-            ? { type: "stream" as const, transform: createV1StreamTransform(nativeConversion.model) }
-            : { type: "buffer" as const, transform: (buf: Buffer) => convertResponseToV1(buf, nativeConversion!.model) }
-          : undefined,
+        route.host, req, res, prep.effectiveBody, allowRetry,
+        pathOverride,
+        prep.responseTransform,
       );
     } catch (err) {
       console.error(

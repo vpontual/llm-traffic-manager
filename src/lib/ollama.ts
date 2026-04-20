@@ -130,11 +130,13 @@ export async function pollVllmServer(host: string) {
     getVllmModels(host),
   ]);
 
-  // Convert vLLM models to OllamaRunningModel shape (always loaded)
+  // Convert vLLM models to OllamaRunningModel shape (always loaded). vLLM does
+  // not report on-disk size, VRAM footprint, or effective context length via
+  // /v1/models — use null so downstream code renders "—" instead of "0 GB".
   const runningModels = models.map((m) => ({
     name: m.id,
     model: m.id,
-    size: 0,
+    size: null,
     digest: "",
     details: {
       parent_model: "",
@@ -145,8 +147,8 @@ export async function pollVllmServer(host: string) {
       quantization_level: "",
     },
     expires_at: new Date("2100-01-01").toISOString(), // vLLM models never expire
-    size_vram: 0,
-    context_length: 0,
+    size_vram: null,
+    context_length: null,
   }));
 
   // vLLM models are both "loaded" and "available"
@@ -154,7 +156,7 @@ export async function pollVllmServer(host: string) {
     name: m.id,
     model: m.id,
     modified_at: new Date().toISOString(),
-    size: 0,
+    size: null,
     digest: "",
     details: {
       parent_model: "",

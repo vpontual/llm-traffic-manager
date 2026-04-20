@@ -12,19 +12,20 @@ export interface OllamaModelDetails {
 export interface OllamaRunningModel {
   name: string;
   model: string;
-  size: number;
+  // vLLM cannot report these; they are null for vLLM-backed entries.
+  size: number | null;
   digest: string;
   details: OllamaModelDetails;
   expires_at: string;
-  size_vram: number;
-  context_length: number;
+  size_vram: number | null;
+  context_length: number | null;
 }
 
 export interface OllamaAvailableModel {
   name: string;
   model: string;
   modified_at: string;
-  size: number;
+  size: number | null;
   digest: string;
   details: OllamaModelDetails;
 }

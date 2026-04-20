@@ -7,7 +7,7 @@ import type { ServerState } from "@/lib/types";
 interface LoadedModel {
   name: string;
   serverName: string;
-  vramSize: number;
+  vramSize: number | null;
   parameterSize: string;
   quantization: string;
   expiresAt: string;
@@ -21,9 +21,9 @@ export function ModelTable({ servers }: { servers: ServerState[] }) {
       allModels.push({
         name: model.name,
         serverName: server.name,
-        vramSize: model.size_vram ?? 0,
-        parameterSize: model.details?.parameter_size ?? "-",
-        quantization: model.details?.quantization_level ?? "-",
+        vramSize: model.size_vram,
+        parameterSize: model.details?.parameter_size || "—",
+        quantization: model.details?.quantization_level || "—",
         expiresAt: model.expires_at ?? "",
       });
     }

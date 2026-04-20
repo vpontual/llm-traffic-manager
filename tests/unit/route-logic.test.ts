@@ -413,14 +413,17 @@ test("selectRoute sticky works with single loaded server", () => {
 });
 
 // --- endpoint filtering by backend type ---
+// Phase 1 (vLLM migration): /api/* traffic is translated to vLLM /v1/* by the
+// proxy adapter, so vLLM is a valid target for Ollama-native endpoints. Only
+// management endpoints (/api/pull, /api/delete, etc.) stay Ollama-only.
 
-test("selectRoute filters vllm out for /api/chat", () => {
+test("selectRoute routes /api/chat to vllm when it advertises the model", () => {
   const vllmServer = makeServer({
     id: 10,
     name: "vllm-dgx",
     totalRamGb: 128,
     backendType: "vllm",
-    loadedModels: [loadedModel("meta-llama/Llama-2-7b")],
+    loadedModels: [loadedModel("qwen3.5:35b")],
   });
   const ollamaServer = makeServer({
     ...nano1,
@@ -428,14 +431,14 @@ test("selectRoute filters vllm out for /api/chat", () => {
   });
   const result = selectRoute({
     onlineServers: [vllmServer, ollamaServer],
-    modelName: "llama3",
+    modelName: "qwen3.5:35b",
     optimisticServerId: null,
     lastRoutedServerId: null,
     roundRobinCounter: 0,
     endpointPath: "/api/chat",
   });
   assert.ok(result);
-  assert.equal(result.server.name, "nano1");
+  assert.equal(result.server.name, "vllm-dgx");
 });
 
 test("selectRoute includes vllm for /v1/chat/completions", () => {
@@ -459,7 +462,7 @@ test("selectRoute includes vllm for /v1/chat/completions", () => {
   assert.equal(result.reason, "model_loaded");
 });
 
-test("selectRoute returns null when only vllm servers and /api/generate", () => {
+test("selectRoute routes /api/generate to the only vllm server when it advertises the model", () => {
   const vllmServer = makeServer({
     id: 10,
     name: "vllm-dgx",
@@ -475,10 +478,62 @@ test("selectRoute returns null when only vllm servers and /api/generate", () => 
     roundRobinCounter: 0,
     endpointPath: "/api/generate",
   });
-  assert.equal(result, null);
+  assert.ok(result);
+  assert.equal(result.server.name, "vllm-dgx");
 });
 
-test("selectRoute no filter when endpointPath is null", () => {
+test("selectRoute skips vllm that does not advertise the requested model", () => {
+  // vLLM cannot dynamic-load, so a non-advertising vLLM is not a candidate.
+  const vllmServer = makeServer({
+    id: 10,
+    name: "vllm-dgx",
+    totalRamGb: 128,
+    backendType: "vllm",
+    loadedModels: [loadedModel("other-model")],
+  });
+  const ollamaServer = makeServer({
+    ...nano1,
+    availableModels: [availableModel("llama3")],
+  });
+  const result = selectRoute({
+    onlineServers: [vllmServer, ollamaServer],
+    modelName: "llama3",
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+    endpointPath: "/api/chat",
+  });
+  assert.ok(result);
+  assert.equal(result.server.name, "nano1");
+});
+
+test("selectRoute excludes vllm from /api/pull management endpoint", () => {
+  const vllmServer = makeServer({
+    id: 10,
+    name: "vllm-dgx",
+    totalRamGb: 128,
+    backendType: "vllm",
+    loadedModels: [loadedModel("qwen3.5:35b")],
+  });
+  const ollamaServer = makeServer({
+    ...nano1,
+    availableModels: [availableModel("llama3")],
+  });
+  const result = selectRoute({
+    onlineServers: [vllmServer, ollamaServer],
+    modelName: "qwen3.5:35b",
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+    endpointPath: "/api/pull",
+  });
+  // vLLM can't pull; ollama nano1 gets it (fallback_most_vram) even though
+  // it doesn't advertise the model — pulls can land on any Ollama server.
+  assert.ok(result);
+  assert.equal(result.server.backendType, "ollama");
+});
+
+test("selectRoute no filter when endpointPath is null (vllm advertises model)", () => {
   const vllmServer = makeServer({
     id: 10,
     name: "vllm-dgx",
@@ -498,7 +553,7 @@ test("selectRoute no filter when endpointPath is null", () => {
   assert.equal(result.server.name, "vllm-dgx");
 });
 
-test("selectRoute filters generic backends for /api/ endpoints", () => {
+test("selectRoute excludes generic backends from all endpoints", () => {
   const genericServer = makeServer({
     id: 11,
     name: "generic-proxy",
@@ -519,6 +574,31 @@ test("selectRoute filters generic backends for /api/ endpoints", () => {
   });
   assert.ok(result);
   assert.equal(result.server.name, "nano1");
+});
+
+test("selectRoute size filter skips vllm backends", () => {
+  // A vLLM server with low advertised RAM still routes — size filtering is
+  // an Ollama-only concept (vLLM is pre-loaded; it either fits or crashes at
+  // launch time).
+  const bigModel = "qwen3.5:35b";
+  const bigModelSize = 22 * 1024 ** 3;
+  const smallVllm = makeServer({
+    id: 10,
+    name: "vllm-small",
+    totalRamGb: 16,
+    backendType: "vllm",
+    loadedModels: [{ ...loadedModel(bigModel), size: bigModelSize }],
+  });
+  const result = selectRoute({
+    onlineServers: [smallVllm],
+    modelName: bigModel,
+    optimisticServerId: null,
+    lastRoutedServerId: null,
+    roundRobinCounter: 0,
+    endpointPath: "/api/chat",
+  });
+  assert.ok(result);
+  assert.equal(result.server.name, "vllm-small");
 });
 
 

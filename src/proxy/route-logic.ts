@@ -114,6 +114,18 @@ function deriveModelSize(onlineServers: ServerSnapshot[], modelName: string): nu
  */
 const MODEL_FIT_THRESHOLD = 0.80;
 
+/**
+ * Endpoints that mutate Ollama server state (model management). These never
+ * route to vLLM regardless of what model the request targets.
+ */
+const MANAGEMENT_ENDPOINTS = new Set([
+  "/api/pull",
+  "/api/delete",
+  "/api/copy",
+  "/api/create",
+  "/api/push",
+]);
+
 export function selectRoute(params: SelectRouteParams): SelectRouteResult | null {
   const {
     modelName, optimisticServerId, lastRoutedServerId,
@@ -123,28 +135,40 @@ export function selectRoute(params: SelectRouteParams): SelectRouteResult | null
   let counter = params.roundRobinCounter;
 
   // Filter servers by endpoint compatibility:
-  // /api/* endpoints only work with Ollama backends
-  // /v1/* endpoints and null path work with all backends
-  let onlineServers = params.onlineServers;
-  if (endpointPath && endpointPath.startsWith("/api/")) {
+  // - Management endpoints (/api/pull, /api/delete, /api/copy, /api/create,
+  //   /api/push) are Ollama-only — vLLM does not support dynamic model
+  //   management and `generic` backends advertise no model catalog.
+  // - All other paths (/api/generate, /api/chat, /api/embed, /v1/*) are
+  //   backend-neutral. The vLLM adapter in server.ts handles translation.
+  // - `generic` backends never serve traffic — they are pure health checks.
+  let onlineServers = params.onlineServers.filter((s) => s.backendType !== "generic");
+  if (endpointPath && MANAGEMENT_ENDPOINTS.has(endpointPath)) {
     onlineServers = onlineServers.filter((s) => s.backendType === "ollama");
   }
 
-  // Size-based filter: drop servers that physically cannot hold this model.
-  // A server stays in the pool if EITHER (a) it advertises enough RAM to fit
-  // the model under the 80% threshold, OR (b) the model is already loaded
-  // there (it has fit by definition). If we cannot derive the size (no
-  // server advertises the model yet), skip the filter — let the normal tiers
-  // fall through to the best-effort fallback.
-  const modelSize = deriveModelSize(onlineServers, modelName);
+  // Size-based filter applies only to Ollama backends. vLLM cannot dynamically
+  // load models, so "fits if loaded" is meaningless — advertisement IS the
+  // routability check for vLLM (§3.3/§3.5). Partition first, filter Ollama
+  // servers by size, then recombine.
+  const vllmServers = onlineServers.filter((s) => s.backendType === "vllm");
+  const ollamaServers = onlineServers.filter((s) => s.backendType === "ollama");
+  const modelSize = deriveModelSize(ollamaServers, modelName);
+  let filteredOllama = ollamaServers;
   if (modelSize !== null) {
-    onlineServers = onlineServers.filter((s) => {
+    filteredOllama = ollamaServers.filter((s) => {
       const ramBytes = s.totalRamGb * 1024 ** 3;
       const fits = ramBytes * MODEL_FIT_THRESHOLD >= modelSize;
       const alreadyLoaded = s.loadedModels.some((m) => m.name === modelName);
       return fits || alreadyLoaded;
     });
   }
+  // For vLLM, only keep entries that currently advertise the requested model.
+  // vLLM can't dynamic-load, so a non-advertising vLLM is not a candidate.
+  const filteredVllm = vllmServers.filter((s) =>
+    s.loadedModels.some((m) => m.name === modelName) ||
+    s.availableModels.some((m) => m.name === modelName),
+  );
+  onlineServers = [...filteredOllama, ...filteredVllm];
 
   if (onlineServers.length === 0) return null;
 
