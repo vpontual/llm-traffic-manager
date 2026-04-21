@@ -88,6 +88,33 @@ function messagesOllamaToVllm(messages: unknown[]): unknown[] {
   });
 }
 
+/**
+ * Translate Ollama's `format` field into OpenAI's `response_format`. Ollama
+ * accepts either the literal string "json" (loose JSON mode) or a JSON schema
+ * object (strict schema-constrained mode). vLLM supports both via OpenAI's
+ * response_format.
+ */
+function applyOllamaFormat(parsed: Record<string, unknown>, target: Record<string, unknown>): void {
+  const fmt = parsed.format;
+  if (fmt === undefined || fmt === null || fmt === "") return;
+  if (fmt === "json") {
+    target.response_format = { type: "json_object" };
+    return;
+  }
+  if (typeof fmt === "object") {
+    // Schema-constrained. OpenAI expects {type: "json_schema", json_schema:
+    // {name, schema, strict}}. Ollama sends a bare JSON Schema object.
+    target.response_format = {
+      type: "json_schema",
+      json_schema: {
+        name: "ollama_format_schema",
+        schema: fmt,
+        strict: true,
+      },
+    };
+  }
+}
+
 function adaptGenerate(parsed: Record<string, unknown>): AdaptedRequest {
   const body: Record<string, unknown> = {
     model: parsed.model,
@@ -96,6 +123,7 @@ function adaptGenerate(parsed: Record<string, unknown>): AdaptedRequest {
   if (parsed.stream !== undefined) body.stream = parsed.stream;
   if (typeof parsed.suffix === "string") body.suffix = parsed.suffix;
   mapOptionsToVllm(parsed.options as Record<string, unknown> | undefined, body);
+  applyOllamaFormat(parsed, body);
   if (parsed.stream !== false) mergeStreamOptions(parsed, body);
   return { path: "/v1/completions", body: Buffer.from(JSON.stringify(body)) };
 }
@@ -122,6 +150,7 @@ function adaptChat(parsed: Record<string, unknown>): AdaptedRequest {
   if (Array.isArray(parsed.tools)) body.tools = parsed.tools;
   if (parsed.tool_choice !== undefined) body.tool_choice = parsed.tool_choice;
   mapOptionsToVllm(parsed.options as Record<string, unknown> | undefined, body);
+  applyOllamaFormat(parsed, body);
   if (parsed.stream !== false) mergeStreamOptions(parsed, body);
   return { path: "/v1/chat/completions", body: Buffer.from(JSON.stringify(body)) };
 }

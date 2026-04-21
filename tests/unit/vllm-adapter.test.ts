@@ -109,6 +109,70 @@ test("adapter: /api/generate defaults stream to true (no stream field)", () => {
   assert.deepEqual(body.stream_options, { include_usage: true });
 });
 
+test("adapter: /api/generate format='json' translates to response_format json_object", () => {
+  const result = adaptRequestOllamaToVllm(
+    "/api/generate",
+    buf({ model: "m", prompt: "extract", stream: false, format: "json" }),
+  );
+  assert.ok(result);
+  const body = parseJsonBuf(result.body);
+  assert.deepEqual(body.response_format, { type: "json_object" });
+});
+
+test("adapter: /api/chat format='json' translates to response_format json_object", () => {
+  const result = adaptRequestOllamaToVllm(
+    "/api/chat",
+    buf({
+      model: "m",
+      messages: [{ role: "user", content: "extract" }],
+      stream: false,
+      format: "json",
+    }),
+  );
+  assert.ok(result);
+  const body = parseJsonBuf(result.body);
+  assert.deepEqual(body.response_format, { type: "json_object" });
+});
+
+test("adapter: /api/chat format=<schema> translates to response_format json_schema", () => {
+  const schema = {
+    type: "object",
+    properties: { name: { type: "string" }, age: { type: "integer" } },
+    required: ["name"],
+  };
+  const result = adaptRequestOllamaToVllm(
+    "/api/chat",
+    buf({
+      model: "m",
+      messages: [{ role: "user", content: "extract" }],
+      stream: false,
+      format: schema,
+    }),
+  );
+  assert.ok(result);
+  const body = parseJsonBuf(result.body);
+  assert.equal(body.response_format.type, "json_schema");
+  assert.equal(body.response_format.json_schema.strict, true);
+  assert.deepEqual(body.response_format.json_schema.schema, schema);
+});
+
+test("adapter: missing/empty format produces no response_format field", () => {
+  for (const fmt of [undefined, null, ""]) {
+    const result = adaptRequestOllamaToVllm(
+      "/api/chat",
+      buf({
+        model: "m",
+        messages: [{ role: "user", content: "hi" }],
+        stream: false,
+        ...(fmt !== undefined ? { format: fmt } : {}),
+      }),
+    );
+    assert.ok(result);
+    const body = parseJsonBuf(result.body);
+    assert.equal(body.response_format, undefined, `format=${JSON.stringify(fmt)} should not emit response_format`);
+  }
+});
+
 test("adapter: /api/chat -> /v1/chat/completions preserves messages", () => {
   const result = adaptRequestOllamaToVllm(
     "/api/chat",
