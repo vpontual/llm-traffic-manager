@@ -4,6 +4,7 @@ import {
   evaluateMetrics,
   AlertCooldown,
   THRESHOLDS,
+  MEM_AVAILABLE_OVERRIDES,
 } from "../../src/lib/alert-rules";
 
 // --- Helper ---
@@ -160,6 +161,42 @@ test("AlertCooldown reset clears all tracked alerts", () => {
   cooldown.reset();
   assert.equal(cooldown.canAlert("server1", "gpu_temp"), true);
   assert.equal(cooldown.canAlert("server2", "cpu_temp"), true);
+});
+
+test("evaluateMetrics applies per-server memory override below default", () => {
+  // 5% available -- triggers default 10% floor, but should NOT trigger 2% override
+  const metrics = makeMetrics({ memAvailable: 800, memTotal: 16000 });
+  const generic = evaluateMetrics("Some Other Box", metrics);
+  assert.ok(generic.find((a) => a.alertType === "memory"), "default floor should fire");
+
+  for (const fleetServer of Object.keys(MEM_AVAILABLE_OVERRIDES)) {
+    const fleet = evaluateMetrics(fleetServer, metrics);
+    assert.equal(
+      fleet.find((a) => a.alertType === "memory"),
+      undefined,
+      `override should suppress memory alert for ${fleetServer}`
+    );
+  }
+});
+
+test("evaluateMetrics still fires memory alert below per-server override floor", () => {
+  // 1% available -- below the 2% inference-fleet floor
+  const metrics = makeMetrics({ memAvailable: 160, memTotal: 16000 });
+  const fleet = evaluateMetrics("Orin AGX", metrics);
+  const memAlert = fleet.find((a) => a.alertType === "memory");
+  assert.ok(memAlert, "below override floor should still alert");
+  assert.match(memAlert!.message, /Orin AGX/);
+});
+
+test("MEM_AVAILABLE_OVERRIDES covers the inference fleet", () => {
+  const expected = ["Orin AGX", "DGX Spark", "Jetson Nano 1", "Jetson Nano 2"];
+  for (const name of expected) {
+    assert.ok(name in MEM_AVAILABLE_OVERRIDES, `missing override for ${name}`);
+    assert.ok(
+      MEM_AVAILABLE_OVERRIDES[name] < THRESHOLDS.MEM_AVAILABLE,
+      `override for ${name} should be tighter than default`
+    );
+  }
 });
 
 test("THRESHOLDS are exported with expected values", () => {
