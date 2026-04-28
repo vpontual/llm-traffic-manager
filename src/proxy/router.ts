@@ -13,6 +13,8 @@ import { selectRoute, freeVram, type ServerSnapshot } from "./route-logic";
 import { BusyRequestTracker, type SlotHandle } from "./busy-tracker";
 import { getDegradedServerIds, recordSuccess, recordError, getErrorRate } from "./health-tracker";
 import { unloadModel } from "../lib/ollama";
+import { sendTelegramMessage } from "../lib/telegram";
+import { StuckEvictionTracker } from "./stuck-eviction-tracker";
 
 
 export async function waitForServerSlot(serverId: number, timeoutMs: number = 300000): Promise<void> {
@@ -207,7 +209,52 @@ async function evictIdleModelsIfNeeded(
       `[evict] Unloading idle model ${model.name} from ${targetServer.name} ` +
       `(${sizeGb}GB) to make room for ${requestedModel}`
     );
-    unloadModel(targetServer.host, model.name).catch((err) => console.warn(`[evict] unload ${model.name} on ${targetServer.name} failed:`, err instanceof Error ? err.message : err));
+    void attemptEviction(targetServer, model.name);
+  }
+}
+
+// Per-(server,model) consecutive eviction failure tracking. After 5 failures
+// in a row, a Telegram alert escalates once per hour while the condition
+// persists. State resets on success or when the poller confirms the model
+// is no longer loaded.
+const stuckEviction = new StuckEvictionTracker(5, 60 * 60 * 1000);
+
+export function resetStuckEvictionIfUnloaded(serverId: number, loadedModelNames: Set<string>): void {
+  stuckEviction.resetIfNotLoaded(serverId, loadedModelNames);
+}
+
+async function attemptEviction(targetServer: ServerSnapshot, modelName: string): Promise<void> {
+  let result;
+  try {
+    result = await unloadModel(targetServer.host, modelName);
+  } catch (err) {
+    result = { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  if (result.ok) {
+    stuckEviction.recordSuccess(targetServer.id, modelName);
+    return;
+  }
+
+  const { count, shouldAlert } = stuckEviction.recordFailure(targetServer.id, modelName);
+  const statusPart = result.status !== undefined ? `status=${result.status}` : "status=network";
+  const errPart = result.error ? ` error=${result.error}` : "";
+  console.warn(
+    `[evict] unload ${modelName} on ${targetServer.name} failed ` +
+    `(attempt=${count}, ${statusPart})${errPart}`
+  );
+
+  if (shouldAlert) {
+    console.error(`[evict] ESCALATION: ${modelName} stuck on ${targetServer.name} (${count} failures)`);
+    const msg =
+      `*\ud83d\udea8 Model Stuck on Server*\n\n` +
+      `*${targetServer.name}*\n` +
+      `Model: \`${modelName}\`\n` +
+      `${count} consecutive eviction failures. Manual intervention needed:\n` +
+      `\`ollama stop ${modelName}\` or restart Ollama on the host.`;
+    sendTelegramMessage(msg).catch((err) =>
+      console.error("[evict] telegram alert failed:", err instanceof Error ? err.message : err)
+    );
   }
 }
 

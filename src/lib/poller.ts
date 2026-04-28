@@ -13,6 +13,7 @@ import { notifySubscribedUsers } from "./user-notifications";
 import { readJsonEnv, readPositiveIntEnv } from "./env";
 import { computeSnapshotSignature } from "./snapshot-dedup";
 import { fetchModelInfo, getInfoFetchStatus } from "./model-info";
+import { resetStuckEvictionIfUnloaded } from "../proxy/router";
 
 // --- In-memory state for diffing between polls --- loaded models between polls
 const previousModels = new Map<number, Set<string>>();
@@ -449,6 +450,7 @@ async function pollAllServers() {
 
         // Update in-memory state
         previousModels.set(server.id, currentModelNames);
+        resetStuckEvictionIfUnloaded(server.id, currentModelNames);
       } catch (err) {
         console.error(`Error polling ${server.name}:`, err);
       }

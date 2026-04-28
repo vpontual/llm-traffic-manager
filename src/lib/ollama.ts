@@ -202,11 +202,19 @@ export async function pollGenericServer(host: string) {
   };
 }
 
+export interface UnloadResult {
+  ok: boolean;
+  status?: number;
+  error?: string;
+}
+
 /**
  * Force-unload a model from an Ollama server by sending a generate request
- * with keep_alive=0. This tells Ollama to unload the model immediately.
+ * with keep_alive=0. Returns structured result so callers can see *why* an
+ * unload failed (non-ok HTTP vs. network error) -- silent booleans hid a
+ * stuck-slot bug on the Orin AGX for hours before it was noticed.
  */
-export async function unloadModel(host: string, modelName: string): Promise<boolean> {
+export async function unloadModel(host: string, modelName: string): Promise<UnloadResult> {
   try {
     const res = await fetch(`http://${host}/api/generate`, {
       method: "POST",
@@ -214,8 +222,12 @@ export async function unloadModel(host: string, modelName: string): Promise<bool
       body: JSON.stringify({ model: modelName, prompt: "", keep_alive: "0s" }),
       signal: AbortSignal.timeout(10000),
     });
-    return res.ok;
-  } catch {
-    return false;
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return { ok: false, status: res.status, error: body.slice(0, 200) };
+    }
+    return { ok: true, status: res.status };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
