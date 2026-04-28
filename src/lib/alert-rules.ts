@@ -7,6 +7,15 @@ export const THRESHOLDS = {
   MEM_AVAILABLE: 0.1,
 } as const;
 
+// Inference-fleet servers run vLLM/Ollama at sustained ~90%+ RAM by design.
+// Tighter floor catches a real runaway without firing on steady-state.
+export const MEM_AVAILABLE_OVERRIDES: Record<string, number> = {
+  "Orin AGX": 0.02,
+  "DGX Spark": 0.02,
+  "Jetson Nano 1": 0.02,
+  "Jetson Nano 2": 0.02,
+};
+
 export interface AlertCondition {
   alertType: string;
   message: string;
@@ -61,7 +70,8 @@ export function evaluateMetrics(
   // Low memory
   if (metrics.memory.total_mb > 0) {
     const availableRatio = metrics.memory.available_mb / metrics.memory.total_mb;
-    if (availableRatio < THRESHOLDS.MEM_AVAILABLE) {
+    const memFloor = MEM_AVAILABLE_OVERRIDES[serverName] ?? THRESHOLDS.MEM_AVAILABLE;
+    if (availableRatio < memFloor) {
       alerts.push({
         alertType: "memory",
         message: `${serverName} memory at ${Math.round((1 - availableRatio) * 100)}%`,
